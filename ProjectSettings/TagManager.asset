@@ -1,0 +1,71 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!78 &1
+TagManager:
+  serializedVersion: 3
+  tags:
+  - BoxAmmo
+  - MoveZone
+  - DragonBodyPart
+  - Crocodile
+  - Bullet
+  - Capy
+  - CheckPoint
+  - DragonHead
+  - DragonFire
+  - Fog
+  - Person
+  - PlayerAnchor
+  - Obstacle
+  - Enemy
+  layers:
+  - Default
+  - TransparentFX
+  - Ignore Raycast
+  - 
+  - Water
+  - UI
+  - 
+  - AmmoBox
+  - Canon
+  - CanonHolder
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  m_SortingLayers:
+  - name: Background
+    uniqueID: 4035983119
+    locked: 0
+  - name: Default
+    uniqueID: 0
+    locked: 0
+  - name: Gameplay
+    uniqueID: 1295681357
+    locked: 0
+  - name: UI
+    uniqueID: 1705380011
+    locked: 0
+  - name: Splash
+    uniqueID: 1439589627
+    locked: 0
+  m_RenderingLayers:
+  - Default
