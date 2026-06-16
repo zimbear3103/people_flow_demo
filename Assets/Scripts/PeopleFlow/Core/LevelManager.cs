@@ -19,14 +19,16 @@ namespace PeopleFlow
 
         public void Build(LevelData level, MaterialLibrary mats, InputManager input, Timer timer)
         {
-            // --- track ---
+            // --- track --- (everything is parented under this LevelManager so a host bridge can
+            // tear the whole level down by destroying one object).
             var trackGo = new GameObject("RunwayTrack");
+            trackGo.transform.SetParent(transform, false);
             Track = trackGo.AddComponent<RunwayTrack>();
             Track.Build(level);
 
-            m_holesRoot = new GameObject("Holes").transform;
-            m_lanesRoot = new GameObject("Lanes").transform;
-            m_runnersRoot = new GameObject("CharactersRoot").transform;
+            m_holesRoot = NewRoot("Holes");
+            m_lanesRoot = NewRoot("Lanes");
+            m_runnersRoot = NewRoot("CharactersRoot");
 
             BuildRunwayVisual(level, mats);
             BuildHoles(level, mats);
@@ -39,6 +41,13 @@ namespace PeopleFlow
 
             PFLog.Info($"Level {level.levelNumber} built: {level.TotalHoles} holes, " +
                        $"{Lanes.Count} lanes, capacity {level.runwayCapacity}.");
+        }
+
+        Transform NewRoot(string name)
+        {
+            var t = new GameObject(name).transform;
+            t.SetParent(transform, false);
+            return t;
         }
 
         // ---- holes ----------------------------------------------------------
@@ -94,6 +103,7 @@ namespace PeopleFlow
 
             // The loop path itself, drawn as a thick line the runners follow.
             var lineGo = new GameObject("TrackLine");
+            lineGo.transform.SetParent(transform, false);
             var lr = lineGo.AddComponent<LineRenderer>();
             int n = 96;
             lr.positionCount = n;

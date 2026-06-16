@@ -65,6 +65,18 @@ namespace PeopleFlow
             if (State == GameState.Playing) Lose(LoseReason.TimeOut);
         }
 
+        /// <summary>Cheat / bridge hook: force an immediate win.</summary>
+        public void ForceWin()
+        {
+            if (State == GameState.Playing || State == GameState.Paused) { Time.timeScale = 1f; Win(); }
+        }
+
+        /// <summary>Cheat / bridge hook: force an immediate loss.</summary>
+        public void ForceLose(LoseReason reason = LoseReason.RunwayFull)
+        {
+            if (State == GameState.Playing || State == GameState.Paused) { Time.timeScale = 1f; Lose(reason); }
+        }
+
         void Win()
         {
             SetState(GameState.Win);

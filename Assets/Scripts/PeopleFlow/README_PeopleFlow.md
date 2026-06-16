@@ -74,7 +74,7 @@ position between frames (`PassedForward`, wrap-aware at t=0/1), not by a proximi
 | Data | `DefaultLevels.cs` | 5 code-defined, guaranteed-solvable sample levels |
 | Gameplay | `RunwayTrack.cs` | loop geometry, capacity, fill %, jam detection |
 | Gameplay | `Hole.cs` | color/required/filled, reservation, specials, visuals |
-| Gameplay | `CharacterController_People.cs` | runs the loop, reserves + hops into holes |
+| Gameplay | `People.cs` | runs the loop, reserves + hops into holes |
 | Gameplay | `Lane.cs` | character queue, hold-release timing, barrier, preview |
 | Build | `MaterialLibrary.cs` | runtime URP material cache (per color + named) |
 | Build | `Prim.cs` | primitive + particle-burst factory |
@@ -106,7 +106,7 @@ Game scene
 ├─ RunwayTrack              (+ Ground, TrackLine, EntryMarker)
 ├─ Holes / Hole_Red …       (Hole.cs each)
 ├─ Lanes / Lane_0 …         (Lane.cs each, child "Pad" has the BoxCollider)
-└─ CharactersRoot / Runner_*  (CharacterController_People.cs each)
+└─ CharactersRoot / Runner_*  (People.cs each)
 ```
 
 **Create the two scenes:**
@@ -123,10 +123,10 @@ List** with **MainMenu first (index 0)** and **Game second (index 1)**.
 ## 4. "Prefabs" (built at runtime; here's the blueprint)
 
 This architecture **builds its objects in code** (`Hole.BuildVisuals`, `Lane.BuildVisuals`,
-`CharacterController_People.Spawn`), so you don't need prefab assets to play. If you'd rather author
+`People.Spawn`), so you don't need prefab assets to play. If you'd rather author
 real prefabs later, here is the equivalent component spec for each:
 
-- **Character** — root (empty) with `CharacterController_People`; children: Capsule "Body",
+- **Character** — root (empty) with `People`; children: Capsule "Body",
   Sphere "Head"; no collider. Color material applied at spawn.
 - **Hole** — root (empty) with `Hole`; children: flat Cylinder "Ring" (colored rim), Cylinder
   "Inner" (dark), N Sphere "Pip" (progress), optional "Ice"/"Gate" overlay, "Burst" ParticleSystem.
@@ -153,15 +153,19 @@ arrows : List<ArrowSetup> { trackPosition, length, speedMultiplier }
 ```
 
 **The game ships with 5 code-defined levels** (`DefaultLevels.cs`) so it runs with zero authored
-assets. They are built so **supply ≥ demand** (always solvable) and colors interleave across lanes:
+assets, and **every one is provably solvable** (see the solvability guarantee in that file):
 
-| # | Colors | Holes | Capacity | Time | Speed | Special |
-|---|---|---|---|---|---|---|
-| 1 | 2 | Red×3, Blue×3 | 14 | 70s | 3.0 | — (tutorial) |
-| 2 | 3 | R/G/B ×3 | 14 | 65s | 3.4 | +1 decoy each |
-| 3 | 4 | R×4 B×4 G×3 Y×3 | 12 | 60s | 3.7 | **Hidden** color (Yellow) |
-| 4 | 4 | R×4 B×4 G×4 Y×3 | 11 | 58s | 3.9 | **Frozen** hole + **Lane barrier** |
-| 5 | 5 | R/B/G/Y/P ×4 | 10 | 55s | 4.2 | **Gate** hole + **Arrow** zone + Hidden |
+| # | Colors | Holes | Capacity | Time | Speed | Special | How built |
+|---|---|---|---|---|---|---|---|
+| 1 | 2 | Red×3, Blue×3 | 14 | 70s | 3.0 | — (tutorial) | auto-dealt, supply==demand |
+| 2 | 3 | R/G/B ×3 | 14 | 65s | 3.4 | — | auto-dealt, supply==demand |
+| 3 | 4 | R×4 B×4 G×3 Y×3 | 12 | 60s | 3.7 | **Hidden** color (Yellow) | auto-dealt, supply==demand |
+| 4 | 4 | R×4 B×4 G×4 Y×3 | 11 | 58s | 3.9 | **Frozen** hole + **Lane barrier** | hand-authored, verified order |
+| 5 | 5 | R/B/G/Y/P ×4 | 10 | 55s | 4.2 | **Gate** hole + **Arrow** zone + Hidden | hand-authored, verified order |
+
+L1–L3 have an always-open hole for every color and exactly enough characters, so any push order
+wins (lose only by timeout — good for learning). L4–L5 add locked mechanics: pushing a frozen/
+gated color *before it unlocks* is how you jam and lose, so timing becomes the puzzle.
 
 **To edit levels in the Inspector:** run the menu **`PeopleFlow ▸ Generate Sample Levels`**. It
 writes `Assets/PeopleFlow/Levels/Level_01..05.asset`. Drag one onto a `GameBootstrap`'s **Override
@@ -220,11 +224,11 @@ All are data-driven via `LevelData`, so you enable them per level with no code c
 
 | Mechanic | Status | Script(s) | Toggle in LevelData |
 |---|---|---|---|
-| **Hidden color** | ✅ | `Hole`, `CharacterController_People` | `HoleSetup.hidden = true` (shows "?" until a runner passes near and `RevealIfHidden` fires) |
+| **Hidden color** | ✅ | `Hole`, `People` | `HoleSetup.hidden = true` (shows "?" until a runner passes near and `RevealIfHidden` fires) |
 | **Frozen hole** | ✅ | `Hole` (+ `GameManager.OnHoleProgress`) | `HoleSetup.mechanic = Frozen`, `unlockAfterHolesCompleted = N` (ice dome until N other holes done) |
 | **Hole gate** | ✅ | `Hole` | `HoleSetup.mechanic = Gate`, `unlockAfterHolesCompleted = N` (barred until N done) |
 | **Lane barrier** | ✅ | `Lane` | `LaneSetup.barrier = true`, `unlockAfterHolesCompleted = N` |
-| **Arrow / speed zone** | ✅ (bonus) | `RunwayTrack`, `CharacterController_People` | add an `ArrowSetup { trackPosition, length, speedMultiplier }` |
+| **Arrow / speed zone** | ✅ (bonus) | `RunwayTrack`, `People` | add an `ArrowSetup { trackPosition, length, speedMultiplier }` |
 
 The "locked" mechanics share one signal — `GameManager.OnHoleProgress(completed, total)` — so a hole
 or lane unlocks the moment enough *other* holes are finished.
@@ -240,8 +244,10 @@ or lane unlocks the moment enough *other* holes are finished.
    nothing to import — no TMP Essentials, no art, no prefabs, no manual canvas layout.
 4. **Holes are placed by a normalized `trackPosition` (0..1)** around an auto-generated oval rather
    than by hand in the scene — far easier to design and reason about.
-5. **Decoy/surplus characters** can be left unpushed (win = holes filled, not lanes emptied); colors
-   tied to a locked hole are dealt to the **back** of lanes so you can always progress elsewhere.
+5. **Win = holes filled, not lanes emptied.** Levels are built supply==demand (open levels) or
+   hand-authored with a verified solution order (locked levels), so they're always winnable. A
+   "surplus decoy color with no hole" (extra wrong-color tension) is a deliberate *next step*
+   rather than shipped, because it can make a naive shuffle unsolvable — see §10.
 6. Managers are **per-scene singletons** (no `DontDestroyOnLoad`); each level is a fresh scene load.
 
 ---
@@ -252,15 +258,19 @@ The open, data-driven architecture makes these incremental:
 
 - **Key & lock** — add `keyColor` to `HoleSetup`; a runner carrying a matching "key" (a flag set
   when it passes a key pickup placed like a hole) satisfies `CanAccept`. Touches `Hole` + a new
-  `KeyPickup` + `CharacterController_People`.
+  `KeyPickup` + `People`.
 - **Moving obstacle on the runway** — a component that occupies a moving `trackPosition`; in
-  `CharacterController_People.Update`, clamp forward progress when the next obstacle is too close
+  `People.Update`, clamp forward progress when the next obstacle is too close
   (timing gates). Touches `RunwayTrack` (obstacle list) + the character.
 - **Connected people** — spawn a short chain that shares one color and must enter the same hole
   together; reserve `chainLength` slots at once in `Hole.TryReserve`. Touches `Lane` (spawn) +
   `Hole`.
 - **Two-way arrows / direction flips** — generalize `SpeedMultiplierAt` to also return a direction
   sign and let the character move backward through a zone.
+- **Surplus / trap colors** (extra "push the wrong color = jam" tension) — add decoy characters of a
+  color whose hole is already satisfied, but place them strictly at the **back** of lanes (after the
+  required ones) so they remain avoidable and the level stays solvable. Touches `DefaultLevels` /
+  your `LevelData` authoring only.
 - **Polish:** assign real SFX/music on `AudioManager`; swap primitive bodies for low-poly prefabs
   (logic is already split from visuals); add star scoring on the win popup; persist per-level stars
   in `SaveManager`; add a level-select scroll for many levels.

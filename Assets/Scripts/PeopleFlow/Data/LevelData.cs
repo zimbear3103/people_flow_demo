@@ -24,7 +24,9 @@ namespace PeopleFlow
         [Min(1)] public int requiredCount = 3;
 
         [Range(0f, 1f)]
-        [Tooltip("Normalised position around the loop (0 = entry / bottom-centre, increasing clockwise).")]
+        [Tooltip("Normalised position around the loop (0 = entry / bottom-centre, increasing clockwise). " +
+                 "Avoid placing a hole at exactly 0 (the spawn point) — runners detect holes by crossing " +
+                 "them, so a hole sitting on the entry would only be caught after a full lap.")]
         public float trackPosition = 0.25f;
 
         [Header("Specials (section 7)")]

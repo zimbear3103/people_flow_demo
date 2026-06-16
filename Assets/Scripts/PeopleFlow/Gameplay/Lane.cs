@@ -109,7 +109,7 @@ namespace PeopleFlow
         void ReleaseOne()
         {
             var color = m_queue.Dequeue();
-            CharacterController_People.Spawn(color, m_track, m_mats, RunwayTrack.EntryT, m_runSpeed, m_runnersRoot);
+            People.Spawn(color, m_track, m_mats, RunwayTrack.EntryT, m_runSpeed, m_runnersRoot);
             AudioManager.Instance?.PlayPush();
             UpdatePreview();
         }

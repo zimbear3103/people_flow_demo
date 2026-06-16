@@ -21,7 +21,7 @@ namespace PeopleFlow
 
         int m_capacity;
         List<ArrowSetup> m_arrows = new List<ArrowSetup>();
-        readonly List<CharacterController_People> m_runners = new List<CharacterController_People>();
+        readonly List<People> m_runners = new List<People>();
         readonly List<Hole> m_holes = new List<Hole>();
 
         /// <summary>Normalised position where lanes feed runners onto the loop (bottom centre).</summary>
@@ -123,14 +123,14 @@ namespace PeopleFlow
 
         // ---- runner bookkeeping --------------------------------------------
 
-        public void Register(CharacterController_People c)
+        public void Register(People c)
         {
             if (c == null || m_runners.Contains(c)) return;
             m_runners.Add(c);
             OnFillChanged?.Invoke(Fill);
         }
 
-        public void Unregister(CharacterController_People c)
+        public void Unregister(People c)
         {
             if (m_runners.Remove(c))
                 OnFillChanged?.Invoke(Fill);

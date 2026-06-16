@@ -177,11 +177,13 @@ namespace PeopleFlow
 
         void EnsureEventSystem()
         {
-            if (FindFirstObjectByType<EventSystem>() != null) return;
+            if (FindAnyObjectByType<EventSystem>() != null) return;
             var go = new GameObject("EventSystem");
             go.AddComponent<EventSystem>();
 #if ENABLE_INPUT_SYSTEM
-            go.AddComponent<InputSystemUIInputModule>();
+            // A module added at runtime has no actions until we assign the defaults, or UI clicks
+            // silently do nothing.
+            go.AddComponent<InputSystemUIInputModule>().AssignDefaultActions();
 #else
             go.AddComponent<StandaloneInputModule>();
 #endif

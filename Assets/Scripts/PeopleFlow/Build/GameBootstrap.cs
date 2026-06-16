@@ -59,7 +59,7 @@ namespace PeopleFlow
 
         static T Ensure<T>(string name) where T : Component
         {
-            var existing = Object.FindFirstObjectByType<T>();
+            var existing = Object.FindAnyObjectByType<T>();
             if (existing != null) return existing;
             return new GameObject(name).AddComponent<T>();
         }
@@ -93,7 +93,7 @@ namespace PeopleFlow
 
         void EnsureLight()
         {
-            if (Object.FindFirstObjectByType<Light>() != null) return;
+            if (Object.FindAnyObjectByType<Light>() != null) return;
             var go = new GameObject("Directional Light");
             var light = go.AddComponent<Light>();
             light.type = LightType.Directional;
