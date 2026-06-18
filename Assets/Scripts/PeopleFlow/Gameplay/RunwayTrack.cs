@@ -23,6 +23,7 @@ namespace PeopleFlow
         List<ArrowSetup> m_arrows = new List<ArrowSetup>();
         readonly List<People> m_runners = new List<People>();
         readonly List<Hole> m_holes = new List<Hole>();
+        readonly List<HoleFactory> m_factories = new List<HoleFactory>();
 
         /// <summary>Normalised position where lanes feed runners onto the loop (bottom centre).</summary>
         public const float EntryT = 0f;
@@ -37,6 +38,11 @@ namespace PeopleFlow
         public float Fill => m_capacity > 0 ? (float)m_runners.Count / m_capacity : 0f;
         public IReadOnlyList<Hole> Holes => m_holes;
 
+        /// <summary>The world-space loop vertices, in order (closed: the last connects back to the
+        /// first). Dense for the oval, sparse corner points for a rectangle. Visuals (the LineRenderer)
+        /// render these directly so they match whatever <see cref="TrackShape"/> built the path.</summary>
+        public IReadOnlyList<Vector3> PathPoints => m_points;
+
         // ---- build ----------------------------------------------------------
 
         public void Build(LevelData level)
@@ -44,18 +50,18 @@ namespace PeopleFlow
             m_capacity = Mathf.Max(1, level.runwayCapacity);
             m_arrows = level.arrows != null ? new List<ArrowSetup>(level.arrows) : new List<ArrowSetup>();
 
-            int n = Mathf.Max(16, m_segments);
-            Vector3 center = transform.position;
-            float a = level.loopWidth * 0.5f;
-            float b = level.loopHeight * 0.5f;
+            // The loop geometry is generated per-shape (oval / rectangle / square / custom). Everything
+            // below — arc-length tables, Evaluate, ClosestT — is shape-agnostic and works on any closed
+            // polyline, so adding a shape only means adding a point generator in TrackPath.
+            var local = TrackPath.Build(level, Mathf.Max(16, m_segments));
 
+            // Project the shape's local XZ points through this object's full transform, so the level's
+            // trackPlacement (position / rotation / scale) moves, turns and sizes the whole loop. With
+            // an identity transform at the origin this is just the local points unchanged.
+            int n = local.Count;
             m_points = new Vector3[n];
             for (int i = 0; i < n; i++)
-            {
-                // Start at the bottom-centre (-90°) so EntryT = 0 sits where lanes feed in.
-                float ang = -Mathf.PI * 0.5f + Mathf.PI * 2f * (i / (float)n);
-                m_points[i] = center + new Vector3(a * Mathf.Cos(ang), 0f, b * Mathf.Sin(ang));
-            }
+                m_points[i] = transform.TransformPoint(new Vector3(local[i].x, 0f, local[i].z));
 
             m_cumulative = new float[n + 1];
             float acc = 0f;
@@ -74,7 +80,51 @@ namespace PeopleFlow
             if (h != null && !m_holes.Contains(h)) m_holes.Add(h);
         }
 
+        /// <summary>Drop a hole from the targetable set — called by a <see cref="HoleFactory"/> when a
+        /// completed hole is retired, so runners stop aiming for it before it animates away.</summary>
+        public void UnregisterHole(Hole h)
+        {
+            if (h != null) m_holes.Remove(h);
+        }
+
+        public void RegisterFactory(HoleFactory f)
+        {
+            if (f != null && !m_factories.Contains(f)) m_factories.Add(f);
+        }
+
+        public void UnregisterFactory(HoleFactory f)
+        {
+            if (f != null) m_factories.Remove(f);
+        }
+
         // ---- path evaluation ------------------------------------------------
+
+        /// <summary>Normalised track parameter (0..1) of the point on the loop closest to
+        /// <paramref name="worldPos"/>. Used to detect runners by where a hole actually sits, even
+        /// when the hole is offset from the loop (e.g. on a factory conveyor).</summary>
+        public float ClosestT(Vector3 worldPos)
+        {
+            if (!m_built || m_segCount == 0) return 0f;
+
+            float bestSqr = float.MaxValue;
+            float bestDist = 0f;
+            for (int i = 0; i < m_segCount; i++)
+            {
+                Vector3 p0 = m_points[i];
+                Vector3 p1 = m_points[(i + 1) % m_segCount];
+                Vector3 seg = p1 - p0;
+                float segLenSqr = seg.sqrMagnitude;
+                float u = segLenSqr > 1e-6f ? Mathf.Clamp01(Vector3.Dot(worldPos - p0, seg) / segLenSqr) : 0f;
+                Vector3 proj = p0 + seg * u;
+                float d = (proj - worldPos).sqrMagnitude;
+                if (d < bestSqr)
+                {
+                    bestSqr = d;
+                    bestDist = m_cumulative[i] + Mathf.Sqrt(segLenSqr) * u;
+                }
+            }
+            return m_totalLength > 1e-5f ? bestDist / m_totalLength : 0f;
+        }
 
         public Vector3 Evaluate(float t01) => Evaluate(t01, out _);
 
@@ -143,7 +193,7 @@ namespace PeopleFlow
             for (int i = 0; i < m_runners.Count; i++)
             {
                 var r = m_runners[i];
-                if (r != null && (r.transform.position - worldPos).sqrMagnitude < sqr)
+                if (r != null && (r.SpacingPosition - worldPos).sqrMagnitude < sqr)
                     return true;
             }
             return false;
@@ -161,16 +211,22 @@ namespace PeopleFlow
         }
 
         /// <summary>
-        /// True if the runway can still drain: someone is mid-jump (a slot is about to free), or
-        /// some runner has a matching, unlocked, not-yet-full hole to aim for.
+        /// True if the runway can still drain: a factory is mid-swap (a hole is about to appear),
+        /// someone is mid-jump (a slot is about to free), or some runner has a matching, unlocked,
+        /// not-yet-full hole to aim for.
         /// </summary>
         bool HasViableMove()
         {
+            // A factory between holes will pop its next hole in within a fraction of a second — don't
+            // call a jam during that gap, or a tight factory level could lose on a false positive.
+            for (int i = 0; i < m_factories.Count; i++)
+                if (m_factories[i] != null && m_factories[i].IsProducing) return true;
+
             for (int i = 0; i < m_runners.Count; i++)
             {
                 var r = m_runners[i];
                 if (r == null) continue;
-                if (r.IsJumping) return true;
+                if (r.IsJumping || r.IsEnteringRoad) return true; // mid-motion: a slot is about to free / fill
                 for (int h = 0; h < m_holes.Count; h++)
                 {
                     if (m_holes[h] != null && m_holes[h].CanAccept(r.Color)) return true;

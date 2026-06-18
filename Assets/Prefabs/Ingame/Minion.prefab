@@ -372,7 +372,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &4950901707722059428
 Transform:
   m_ObjectHideFlags: 0
@@ -413,7 +413,7 @@ SkinnedMeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 9452ae1262a74094f8a68013fbcd1834, type: 2}
+  - {fileID: 0}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1379,6 +1379,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e1623158d7f67fe46914a4125886ce65, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PeopleFlow.People
+  RevealWindow: 1
+  JumpHeight: 1.3
+  JumpDuration: 0.32
+  m_previewSlideSpeed: 6
 --- !u!1 &6384691994195730706
 GameObject:
   m_ObjectHideFlags: 0

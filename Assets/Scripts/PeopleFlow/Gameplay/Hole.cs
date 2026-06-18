@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace PeopleFlow
@@ -6,15 +7,39 @@ namespace PeopleFlow
     /// A coloured hole around the loop. Needs <c>requiredCount</c> matching runners to complete.
     /// Reserves a slot per incoming runner (so two runners never over-fill the last slot) and
     /// supports the section-7 specials: hidden colour, frozen, and gate.
+    ///
+    /// A hole can stand alone (placed directly by <see cref="LevelManager"/>) or be one item in a
+    /// <see cref="HoleFactory"/>'s bundle. The factory listens to <see cref="OnCompleted"/> to know
+    /// when to retire this hole and produce the next one in its bundle.
     /// </summary>
     public class Hole : MonoBehaviour
     {
-        public PeopleColor Color { get; private set; }
-        public int Required { get; private set; }
+        [SerializeField]
+        private GameObject m_holeGameObj; // optional reference to a single renderer to tint for the hole colour (vs. tinting all renderers in the prefab)
+        [SerializeField]
+        private GameObject m_holeInGameObj;  // optional reference to a single renderer to tint for the pip colour (vs. tinting all renderers in the prefab)
+        [SerializeField]
+        private PeopleColor m_colorHole = PeopleColor.Red;
+        [SerializeField]
+        private int m_required = 1;
+        [SerializeField]
+        private float m_trackT = 0.5f;
+
+        public PeopleColor Color => m_colorHole;
+        public int Required => Mathf.Max(1, m_required);
         public int Filled { get; private set; }
         public int Reserved { get; private set; }
         public float TrackT { get; private set; }
         public bool IsComplete { get; private set; }
+
+        /// <summary>World position a runner should hop into: the actual hole opening
+        /// (<see cref="m_holeGameObj"/>) if one is assigned, otherwise the hole root. Lets a runner
+        /// land in the hole's mouth even when the hole sits offset on a factory conveyor.</summary>
+        public Vector3 JumpTarget => m_holeGameObj != null ? m_holeGameObj.transform.position : transform.position;
+
+        /// <summary>Fired once when the hole fills to its required count. The owning
+        /// <see cref="HoleFactory"/> (if any) uses this to retire the hole and spawn the next.</summary>
+        public event Action<Hole> OnCompleted;
 
         bool m_hidden;
         bool m_revealed;
@@ -23,10 +48,8 @@ namespace PeopleFlow
         int m_observedCompleted;
 
         MaterialLibrary m_mats;
-        Renderer m_ring;
-        Renderer m_innerDisc;
-        Renderer[] m_pips;
-        GameObject m_lockOverlay;
+        Renderer[] m_renderers;   // the prefab's body renderers, tinted to the hole's colour
+        GameObject m_lockOverlay; // optional named child shown while Frozen/Gate is locked
         ParticleSystem m_burst;
 
         /// <summary>Locked = a Frozen/Gate hole whose unlock condition has not been met yet.</summary>
@@ -37,21 +60,21 @@ namespace PeopleFlow
         public void Setup(HoleSetup setup, MaterialLibrary mats)
         {
             m_mats = mats;
-            Color = setup.color;
-            Required = Mathf.Max(1, setup.requiredCount);
+            m_colorHole = setup.color;
+            m_required = Mathf.Max(1, setup.requiredCount);
             TrackT = setup.trackPosition;
             m_hidden = setup.hidden;
             m_mechanic = setup.mechanic;
             m_unlockAfter = setup.unlockAfterHolesCompleted;
-
-            BuildVisuals();
-            RefreshLockVisual();
 
             if (GameManager.Instance != null)
             {
                 GameManager.Instance.OnHoleProgress += OnHoleProgress;
                 m_observedCompleted = GameManager.Instance.CompletedHoles;
             }
+
+            BindVisuals();
+            RefreshLockVisual();
         }
 
         void OnDestroy()
@@ -83,7 +106,7 @@ namespace PeopleFlow
         {
             if (Reserved > 0) Reserved--;
             Filled = Mathf.Min(Required, Filled + 1);
-            UpdatePips();
+            ApplyColor();
 
             AudioManager.Instance?.PlayFill();
             Haptics.Light();
@@ -95,12 +118,13 @@ namespace PeopleFlow
         void Complete()
         {
             IsComplete = true;
-            if (m_innerDisc != null) m_innerDisc.sharedMaterial = m_mats.Colored(Color);
+            ApplyColor();
             if (m_burst != null) { m_burst.transform.localScale = Vector3.one; m_burst.Play(); }
 
             AudioManager.Instance?.PlayHoleComplete();
             Haptics.Success();
             GameManager.Instance?.ReportHoleCompleted(this);
+            OnCompleted?.Invoke(this);
         }
 
         /// <summary>Reveal a hidden colour (called by a runner that gets close).</summary>
@@ -108,8 +132,7 @@ namespace PeopleFlow
         {
             if (!m_hidden || m_revealed) return;
             m_revealed = true;
-            UpdateRingColor();
-            UpdatePips();
+            ApplyColor();
         }
 
         // ---- specials -------------------------------------------------------
@@ -128,70 +151,38 @@ namespace PeopleFlow
         void RefreshLockVisual()
         {
             if (m_lockOverlay != null) m_lockOverlay.SetActive(IsLocked);
+            ApplyColor();
         }
 
-        // ---- visuals --------------------------------------------------------
-
-        void BuildVisuals()
+        void BindVisuals()
         {
-            // Coloured rim (flat cylinder) + dark inner disc that reads as the actual hole.
-            var ringGo = Prim.Create(PrimitiveType.Cylinder, "Ring", transform,
-                new Vector3(0f, 0.03f, 0f), new Vector3(1.35f, 0.06f, 1.35f), RingMaterial());
-            m_ring = ringGo.GetComponent<Renderer>();
+            m_renderers = Prim.CollectTintable(gameObject);
+            if (m_renderers.Length == 0)
+                PFLog.Warn($"Hole prefab '{name}' has no tintable renderers — colour/progress state won't show.");
 
-            var inner = Prim.Create(PrimitiveType.Cylinder, "Inner", transform,
-                new Vector3(0f, 0.05f, 0f), new Vector3(1.0f, 0.06f, 1.0f), m_mats.Dark);
-            m_innerDisc = inner.GetComponent<Renderer>();
-
-            // Progress pips in a row floating above the hole.
-            m_pips = new Renderer[Required];
-            float spacing = 0.26f;
-            float startX = -(Required - 1) * 0.5f * spacing;
-            for (int i = 0; i < Required; i++)
-            {
-                var pip = Prim.Create(PrimitiveType.Sphere, "Pip" + i, transform,
-                    new Vector3(startX + i * spacing, 0.85f, 0f), Vector3.one * 0.16f, m_mats.DimPip);
-                m_pips[i] = pip.GetComponent<Renderer>();
-            }
-
-            // Lock overlay: an ice dome (Frozen) or barred cubes (Gate).
-            if (m_mechanic == HoleMechanic.Frozen)
-            {
-                m_lockOverlay = Prim.Create(PrimitiveType.Sphere, "Ice", transform,
-                    new Vector3(0f, 0.25f, 0f), new Vector3(1.5f, 0.9f, 1.5f), m_mats.Ice);
-            }
-            else if (m_mechanic == HoleMechanic.Gate)
-            {
-                m_lockOverlay = new GameObject("Gate");
-                m_lockOverlay.transform.SetParent(transform, false);
-                for (int i = -1; i <= 1; i++)
-                {
-                    Prim.Create(PrimitiveType.Cube, "Bar", m_lockOverlay.transform,
-                        new Vector3(i * 0.4f, 0.35f, 0f), new Vector3(0.12f, 0.7f, 1.5f), m_mats.Dark);
-                }
-            }
+            var overlay = Prim.FindDescendant(transform, "Ice", "Frozen", "Gate", "Lock");
+            if (overlay != null) m_lockOverlay = overlay.gameObject;
 
             m_burst = Prim.CreateBurst(transform, Color.ToColor());
-            UpdatePips();
+            ApplyColor();
         }
 
-        Material RingMaterial()
-            => (m_hidden && !m_revealed) ? m_mats.Hidden : m_mats.Colored(Color);
+        void ApplyColor() => Prim.Tint(m_renderers, CurrentMaterial());
 
-        void UpdateRingColor()
+        /// <summary>The tint for the current state: ice when locked, grey while a hidden colour is
+        /// concealed, the designer-assigned material when one is mapped for this colour, otherwise
+        /// the generated hole colour brightening from dim → full as it fills.</summary>
+        Material CurrentMaterial()
         {
-            if (m_ring != null) m_ring.sharedMaterial = RingMaterial();
-        }
+            if (IsLocked) return m_mats.Ice;
+            if (m_hidden && !m_revealed) return m_mats.Hidden;
 
-        void UpdatePips()
-        {
-            if (m_pips == null) return;
-            Material filledMat = (m_hidden && !m_revealed) ? m_mats.Hidden : m_mats.Colored(Color);
-            for (int i = 0; i < m_pips.Length; i++)
-            {
-                if (m_pips[i] != null)
-                    m_pips[i].sharedMaterial = i < Filled ? filledMat : m_mats.DimPip;
-            }
+            if (m_mats.HasColorOverride(Color)) return m_mats.Colored(Color);
+
+            UnityEngine.Color full = Color.ToColor();
+            float t = Required > 0 ? (float)Filled / Required : 1f;
+            UnityEngine.Color dim = UnityEngine.Color.Lerp(full, ColorPalette.Neutral, 0.55f);
+            return m_mats.Solid(UnityEngine.Color.Lerp(dim, full, t));
         }
     }
 }

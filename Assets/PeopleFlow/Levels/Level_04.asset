@@ -1,0 +1,113 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dfe685c2fd8206a4a9e8afbaa689e52f, type: 3}
+  m_Name: Level_04
+  m_EditorClassIdentifier: Assembly-CSharp::PeopleFlow.LevelData
+  levelNumber: 4
+  timeLimit: 58
+  runwayCapacity: 11
+  runSpeed: 3.9
+  trackShape: 0
+  loopWidth: 7.5
+  loopHeight: 11.5
+  cornerRadius: 0
+  customWaypoints: []
+  roadVisual: 0
+  trackPlacement:
+    overrideTransform: 0
+    position: {x: 0, y: 0, z: 0}
+    rotationEuler: {x: 0, y: 0, z: 0}
+    scale: {x: 1, y: 1, z: 1}
+  lanes:
+  - characters: 000000000000000000000000
+    groupSize: 3
+    barrier: 0
+    unlockAfterHolesCompleted: 0
+    placement:
+      overrideTransform: 0
+      position: {x: 0, y: 0, z: 0}
+      rotationEuler: {x: 0, y: 0, z: 0}
+      scale: {x: 1, y: 1, z: 1}
+  - characters: 030000000300000003000000
+    groupSize: 3
+    barrier: 0
+    unlockAfterHolesCompleted: 0
+    placement:
+      overrideTransform: 0
+      position: {x: 0, y: 0, z: 0}
+      rotationEuler: {x: 0, y: 0, z: 0}
+      scale: {x: 1, y: 1, z: 1}
+  - characters: 010000000100000001000000
+    groupSize: 3
+    barrier: 0
+    unlockAfterHolesCompleted: 0
+    placement:
+      overrideTransform: 0
+      position: {x: 0, y: 0, z: 0}
+      rotationEuler: {x: 0, y: 0, z: 0}
+      scale: {x: 1, y: 1, z: 1}
+  - characters: 020000000200000002000000
+    groupSize: 3
+    barrier: 1
+    unlockAfterHolesCompleted: 1
+    placement:
+      overrideTransform: 0
+      position: {x: 0, y: 0, z: 0}
+      rotationEuler: {x: 0, y: 0, z: 0}
+      scale: {x: 1, y: 1, z: 1}
+  holes:
+  - color: 0
+    requiredCount: 3
+    trackPosition: 0.15
+    hidden: 0
+    mechanic: 0
+    unlockAfterHolesCompleted: 0
+    placement:
+      overrideTransform: 0
+      position: {x: 0, y: 0, z: 0}
+      rotationEuler: {x: 0, y: 0, z: 0}
+      scale: {x: 1, y: 1, z: 1}
+  - color: 1
+    requiredCount: 3
+    trackPosition: 0.4
+    hidden: 0
+    mechanic: 0
+    unlockAfterHolesCompleted: 0
+    placement:
+      overrideTransform: 0
+      position: {x: 0, y: 0, z: 0}
+      rotationEuler: {x: 0, y: 0, z: 0}
+      scale: {x: 1, y: 1, z: 1}
+  - color: 2
+    requiredCount: 3
+    trackPosition: 0.65
+    hidden: 0
+    mechanic: 1
+    unlockAfterHolesCompleted: 2
+    placement:
+      overrideTransform: 0
+      position: {x: 0, y: 0, z: 0}
+      rotationEuler: {x: 0, y: 0, z: 0}
+      scale: {x: 1, y: 1, z: 1}
+  - color: 3
+    requiredCount: 3
+    trackPosition: 0.88
+    hidden: 0
+    mechanic: 0
+    unlockAfterHolesCompleted: 0
+    placement:
+      overrideTransform: 0
+      position: {x: 0, y: 0, z: 0}
+      rotationEuler: {x: 0, y: 0, z: 0}
+      scale: {x: 1, y: 1, z: 1}
+  holeFactories: []
+  arrows: []

@@ -39,4 +39,22 @@ namespace PeopleFlow
         Frozen, // inert + ice-tinted until "unlockAfterHolesCompleted" other holes are complete
         Gate    // visible but barred until "unlockAfterHolesCompleted" other holes are complete
     }
+
+    /// <summary>The geometry of the closed runway loop. All shapes share the generic arc-length
+    /// path engine in <see cref="RunwayTrack"/>; they differ only in the corner points generated.</summary>
+    public enum TrackShape
+    {
+        Oval,       // smooth ellipse from loopWidth × loopHeight
+        Rectangle,  // loopWidth × loopHeight box; cornerRadius 0 = sharp "kinky" corners, >0 = rounded
+        Square,     // square sized to min(loopWidth, loopHeight); cornerRadius applies as for Rectangle
+        Custom      // designer-supplied corner points (LevelData.customWaypoints), the manual-setup path
+    }
+
+    /// <summary>How the runway is drawn. Both visuals follow the same <see cref="RunwayTrack"/> path,
+    /// so they match whatever <see cref="TrackShape"/> is in use.</summary>
+    public enum RoadVisual
+    {
+        RoadTiles,  // tile the Road prefab around the loop (falls back to a line if no prefab is set)
+        Line        // draw the path as a LineRenderer through the loop's corner points
+    }
 }

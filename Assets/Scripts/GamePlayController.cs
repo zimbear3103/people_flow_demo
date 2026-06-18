@@ -405,13 +405,6 @@ public class GamePlayController : Singleton<GamePlayController>
         IsGamePlaying = false;
         SetGameControlStatus(ControlStatusType.Exit, GameStateType.PlayerDead);
     }
-    public void BossDead(float waitTime)
-    {
-        m_bossDeadWaitingTime = waitTime;
-        m_WaitingTimer = 0.0f;
-        IsGamePlaying = false;
-        SetGameControlStatus(ControlStatusType.Exit, GameStateType.BossDead);
-    }
 
     public void StartLevel()
     {

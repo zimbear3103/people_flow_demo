@@ -10,10 +10,17 @@ namespace PeopleFlow
     public class MaterialLibrary
     {
         readonly Dictionary<int, Material> m_cache = new Dictionary<int, Material>();
+        readonly Dictionary<PeopleColor, Material> m_colorOverrides;
         readonly Shader m_shader;
 
-        public MaterialLibrary()
+        /// <param name="colorOverrides">
+        /// Optional designer-assigned material per colour (see <see cref="ColorMaterialSet"/>).
+        /// A colour present here returns its material from <see cref="Colored"/>; any other colour
+        /// falls back to a generated material.
+        /// </param>
+        public MaterialLibrary(Dictionary<PeopleColor, Material> colorOverrides = null)
         {
+            m_colorOverrides = colorOverrides;
             m_shader = Shader.Find("Universal Render Pipeline/Lit")
                        ?? Shader.Find("Standard")
                        ?? Shader.Find("Sprites/Default");
@@ -35,7 +42,17 @@ namespace PeopleFlow
             return m;
         }
 
-        public Material Colored(PeopleColor c) => Solid(c.ToColor());
+        /// <summary>The designer-assigned material for this colour if one is mapped, else a generated one.</summary>
+        public Material Colored(PeopleColor c)
+        {
+            if (m_colorOverrides != null && m_colorOverrides.TryGetValue(c, out var m) && m != null)
+                return m;
+            return Solid(c.ToColor());
+        }
+
+        /// <summary>True if a designer material is mapped for this colour (vs. a generated one).</summary>
+        public bool HasColorOverride(PeopleColor c)
+            => m_colorOverrides != null && m_colorOverrides.TryGetValue(c, out var m) && m != null;
 
         // Named convenience materials.
         public Material Neutral => Solid(ColorPalette.Neutral);

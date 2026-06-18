@@ -38,6 +38,24 @@ namespace PeopleFlow
             if (tr != null) tr.localScale = target;
         }
 
+        /// <summary>Shrink a transform from its current scale down to zero, then invoke
+        /// <paramref name="onDone"/> (used to retire a completed hole before its replacement pops in).</summary>
+        public static IEnumerator ScaleOut(Transform tr, float duration, Action onDone)
+        {
+            if (tr == null) { onDone?.Invoke(); yield break; }
+            Vector3 from = tr.localScale;
+            float e = 0f;
+            while (e < duration && tr != null)
+            {
+                e += Time.deltaTime;
+                float k = EaseInQuad(Mathf.Clamp01(e / duration));
+                tr.localScale = from * (1f - k);
+                yield return null;
+            }
+            if (tr != null) tr.localScale = Vector3.zero;
+            onDone?.Invoke();
+        }
+
         /// <summary>
         /// Move a transform from its current position to <paramref name="to"/> along a parabolic
         /// arc of the given peak height, shrinking to zero scale by the end (the "jump in" hop).
@@ -58,6 +76,29 @@ namespace PeopleFlow
                 tr.localScale = startScale * (1f - EaseInQuad(k)); // shrink as it drops in
                 yield return null;
             }
+            onDone?.Invoke();
+        }
+
+        /// <summary>
+        /// Move a transform from its current position to <paramref name="to"/> along a parabolic arc
+        /// of the given peak height, keeping its scale. The "hop onto the track" entry — unlike
+        /// <see cref="HopInto"/>, which shrinks away as it lands in a hole.
+        /// </summary>
+        public static IEnumerator HopArc(Transform tr, Vector3 to, float height, float duration, Action onDone)
+        {
+            if (tr == null) { onDone?.Invoke(); yield break; }
+            Vector3 from = tr.position;
+            float e = 0f;
+            while (e < duration && tr != null)
+            {
+                e += Time.deltaTime;
+                float k = Mathf.Clamp01(e / duration);
+                Vector3 p = Vector3.Lerp(from, to, EaseInOutQuad(k));
+                p.y += height * Mathf.Sin(k * Mathf.PI); // parabola: 0 → peak → 0
+                tr.position = p;
+                yield return null;
+            }
+            if (tr != null) tr.position = to;
             onDone?.Invoke();
         }
     }

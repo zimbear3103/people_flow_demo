@@ -35,7 +35,7 @@ GameBootstrap ──builds──▶ camera / light / managers / UI
         │
         └─▶ LevelManager.Build(LevelData)
                 ├─ RunwayTrack   (oval polyline, arc-length lookup, capacity, JAM detection)
-                ├─ Hole × N      (color, requiredCount, reservation, specials)
+                ├─ Factory × N   (every hole spawns here; standalone holes = single-hole factories)
                 ├─ Lane × M      (queue, tap-hold release, barrier)
                 └─ binds InputManager / Timer / UIManager, then GameManager.BeginLevel()
 
@@ -70,7 +70,8 @@ position between frames (`PassedForward`, wrap-aware at t=0/1), not by a proximi
 | Core | `InputManager.cs` | tap-and-hold per lane (Pointer raycast) |
 | Core | `LevelManager.cs` | builds runway/holes/lanes from `LevelData`, wires everything |
 | Data | `ColorPalette.cs` | `PeopleColor` → pastel `Color` |
-| Data | `LevelData.cs` | ScriptableObject + `LaneSetup`/`HoleSetup`/`ArrowSetup` |
+| Data | `LevelData.cs` | ScriptableObject + `LaneSetup`/`HoleSetup`/`HoleFactorySetup`/`ArrowSetup`/`TransformSpec` |
+| Data | `LevelPrefabs.cs` | the drag-and-drop Hole/Factory/Lane/Character/Road prefab set |
 | Data | `DefaultLevels.cs` | 5 code-defined, guaranteed-solvable sample levels |
 | Gameplay | `RunwayTrack.cs` | loop geometry, capacity, fill %, jam detection |
 | Gameplay | `Hole.cs` | color/required/filled, reservation, specials, visuals |
@@ -104,7 +105,7 @@ Game scene
 ├─ EventSystem              (InputSystemUIInputModule)     ← auto
 ├─ PF_Canvas                (HUD + popups)                 ← auto
 ├─ RunwayTrack              (+ Ground, TrackLine, EntryMarker)
-├─ Holes / Hole_Red …       (Hole.cs each)
+├─ Factories / Factory_0 …  (HoleFactory.cs each; every hole spawns at one, incl. single-hole ones)
 ├─ Lanes / Lane_0 …         (Lane.cs each, child "Pad" has the BoxCollider)
 └─ CharactersRoot / Runner_*  (People.cs each)
 ```
@@ -120,24 +121,47 @@ List** with **MainMenu first (index 0)** and **Game second (index 1)**.
 
 ---
 
-## 4. "Prefabs" (built at runtime; here's the blueprint)
+## 4. Prefabs (drag-and-drop; **required**)
 
-This architecture **builds its objects in code** (`Hole.BuildVisuals`, `Lane.BuildVisuals`,
-`People.Spawn`), so you don't need prefab assets to play. If you'd rather author
-real prefabs later, here is the equivalent component spec for each:
+Holes, lanes and characters are built by **instantiating prefab assets you drag into the inspector**,
+not from primitives in code. Assign them in the `LevelPrefabs` block on **`GameBootstrap`** (the
+single object you drop into the `Game` scene) — or directly on a placed **`LevelManager`** /
+**`PeopleFlowGameController`**. The entry components forward whatever you set onto the LevelManager
+that actually runs the build, so configuring the one scene object is enough. If a hole, lane, or the
+character prefab is missing, `LevelManager.Build` logs an error naming what's missing and aborts (no
+procedural fallback).
 
-- **Character** — root (empty) with `People`; children: Capsule "Body",
-  Sphere "Head"; no collider. Color material applied at spawn.
-- **Hole** — root (empty) with `Hole`; children: flat Cylinder "Ring" (colored rim), Cylinder
-  "Inner" (dark), N Sphere "Pip" (progress), optional "Ice"/"Gate" overlay, "Burst" ParticleSystem.
-- **Lane** — root (empty) with `Lane`; child Cube "Pad" **with BoxCollider** (this is what the
-  pointer raycast hits), preview Cubes, optional "Barrier" cube.
-- **Runway** — `RunwayTrack` on an empty at the origin; the LevelManager adds Ground (Plane),
-  a looped `LineRenderer` "TrackLine", and an "EntryMarker".
+The fields are plain `GameObject` references, one prefab per role:
 
-> To switch from procedural to authored prefabs you'd remove the `BuildVisuals`/`Spawn` body
-> construction and `Instantiate` your prefabs instead — the logic components are already separated
-> from their visuals for exactly this.
+- **`hole` / `factorie` / `lane`** — one prefab each, reused for every hole / factory / lane the level
+  defines (the `…For(index)` accessors keep an index param, ignored, so a per-index variant set can
+  drop in later).
+- **`character`** is a single prefab, instantiated per released runner.
+- **`road`** is optional — the runway falls back to a procedural line if it is missing.
+
+**Colour materials (optional):** the `ColorMaterialSet` block is a `PeopleColor → Material` list —
+drag a real material per colour. `MaterialLibrary.Colored(color)` returns that material for the
+colour, falling back to a generated one for any colour left empty. It drives runner / hole / lane
+tints, so this is how you skin the game with authored materials. Assign it on the same scene object
+as the prefabs (it's forwarded the same way).
+
+The bundled art prefabs under `Assets/Prefabs/Ingame/` are already wired (drag them into `hole` /
+`factorie` / `lane` / `character`):
+
+- **Character** → `Minion.prefab` (root has `People`). Body renderers are tinted to the runner's
+  colour on spawn; pops in from zero to the prefab's authored scale.
+- **Hole** → `Hole.prefab` (root has `Hole`). Body renderers are tinted to the hole colour,
+  brightening from dim → full as it fills; an `Ice`/`Frozen`/`Gate`/`Lock` child (if present) is the
+  lock overlay, otherwise the locked state is shown by an ice tint. A code particle "Burst" fires on completion.
+- **Lane** → `WaitingArea.prefab` (root has `Lane`). The tray is tinted to the colour at the front
+  of the queue; a `Barrier`/`Frozen`/`Gate`/`Lock` child acts as the barrier indicator. It has **no
+  collider**, so `Lane` adds a `BoxCollider` (sized to its renderers) at runtime — the pointer
+  raycast needs one. (`Runway` ground / `TrackLine` / `EntryMarker` are still built procedurally.)
+
+> Tinting is generic: `Prim.CollectTintable` grabs the mesh/skinned renderers and skips helpers named
+> like *shadow / number / text / outline / eye / frozen / barrier / gate / ice / lock*. Name a child
+> accordingly if you don't want it recoloured. Any prefab whose root carries the right component
+> (`Hole` / `Lane` / `People`) works — the logic is decoupled from the art.
 
 ---
 
@@ -147,10 +171,30 @@ real prefabs later, here is the equivalent component spec for each:
 
 ```
 levelNumber, timeLimit, runwayCapacity, runSpeed, loopWidth, loopHeight,
-lanes  : List<LaneSetup>  { characters[], barrier, unlockAfterHolesCompleted }
-holes  : List<HoleSetup>  { color, requiredCount, trackPosition(0..1), hidden, mechanic, unlockAfterHolesCompleted }
+trackPlacement : TransformSpec  // pin / rotate / scale the whole loop (off = centred on origin)
+lanes  : List<LaneSetup>  { characters[], barrier, unlockAfterHolesCompleted, placement }
+holes  : List<HoleSetup>  { color, requiredCount, trackPosition(0..1), hidden, mechanic, unlockAfterHolesCompleted, placement }
+holeFactories : List<HoleFactorySetup> { trackPosition(0..1), bundle: List<HoleSetup>, placement }  // one position, holes produced one at a time
 arrows : List<ArrowSetup> { trackPosition, length, speedMultiplier }
 ```
+
+**Holes only spawn at factories.** `LevelManager.Build` builds *every* hole at a factory under the
+**Factories** root — there is no separate "Holes" root. Each authored `holeFactories` entry keeps its
+full bundle; each standalone `holes` entry is wrapped into its **own single-hole factory** at the
+hole's `trackPosition` (or its pinned placement). Either way a factory produces its hole(s) one at a
+time, the produced hole rides the conveyor, and it is detected at the nearest point on the track. The
+win count (`TotalHoles`) is unchanged — it still counts every standalone hole plus every bundle hole,
+all of which now appear via factories — so a level that lists holes needs the **factory prefab**
+assigned (the hole prefab is still used as the thing each factory produces).
+
+**Placement (`TransformSpec`).** Every built object — the runway loop (`trackPlacement`), each hole,
+factory and lane (`placement`) — carries a stored transform: `{ overrideTransform, position,
+rotationEuler, scale }`. Turn **`overrideTransform`** ON to pin that object at an exact
+position/rotation/scale; leave it OFF (the default) to let the build compute the layout
+automatically — factories from their normalised `trackPosition`, lanes auto-spaced along the bottom
+edge. So a level's whole geometry is data-driven from `LevelData`: `LevelManager.Build` instantiates
+`RunwayTrack` (under itself), the factories (under **Factories**) and the lanes (under **Lanes**),
+placing each from its spec.
 
 **The game ships with 5 code-defined levels** (`DefaultLevels.cs`) so it runs with zero authored
 assets, and **every one is provably solvable** (see the solvability guarantee in that file):
@@ -158,7 +202,7 @@ assets, and **every one is provably solvable** (see the solvability guarantee in
 | # | Colors | Holes | Capacity | Time | Speed | Special | How built |
 |---|---|---|---|---|---|---|---|
 | 1 | 2 | Red×3, Blue×3 | 14 | 70s | 3.0 | — (tutorial) | auto-dealt, supply==demand |
-| 2 | 3 | R/G/B ×3 | 14 | 65s | 3.4 | — | auto-dealt, supply==demand |
+| 2 | 3 | R/G/B ×3 (one **factory**) | 14 | 65s | 3.4 | **Hole factory** (R→G→B bundle) | auto-dealt, supply==demand |
 | 3 | 4 | R×4 B×4 G×3 Y×3 | 12 | 60s | 3.7 | **Hidden** color (Yellow) | auto-dealt, supply==demand |
 | 4 | 4 | R×4 B×4 G×4 Y×3 | 11 | 58s | 3.9 | **Frozen** hole + **Lane barrier** | hand-authored, verified order |
 | 5 | 5 | R/B/G/Y/P ×4 | 10 | 55s | 4.2 | **Gate** hole + **Arrow** zone + Hidden | hand-authored, verified order |
@@ -229,9 +273,27 @@ All are data-driven via `LevelData`, so you enable them per level with no code c
 | **Hole gate** | ✅ | `Hole` | `HoleSetup.mechanic = Gate`, `unlockAfterHolesCompleted = N` (barred until N done) |
 | **Lane barrier** | ✅ | `Lane` | `LaneSetup.barrier = true`, `unlockAfterHolesCompleted = N` |
 | **Arrow / speed zone** | ✅ (bonus) | `RunwayTrack`, `People` | add an `ArrowSetup { trackPosition, length, speedMultiplier }` |
+| **Hole factory (bundle)** | ✅ | `HoleFactory`, `Hole` | add a `HoleFactorySetup { trackPosition, bundle: List<HoleSetup> }` to `LevelData.holeFactories` |
 
 The "locked" mechanics share one signal — `GameManager.OnHoleProgress(completed, total)` — so a hole
 or lane unlocks the moment enough *other* holes are finished.
+
+**Hole factory.** A factory occupies one `trackPosition` and produces a *bundle* of holes one at a
+time: hole `0` pops in; when a runner fills it, it fires `Hole.OnCompleted`, the factory unregisters
+it from the track, shrinks it away (`TweenUtil.ScaleOut`), then spawns the next bundle entry in its
+place — until the bundle is exhausted. Each bundle entry is a normal `HoleSetup` (colour / count /
+specials all work; its own `trackPosition` is ignored — the factory's is used). `LevelData.TotalHoles`
+counts every standalone hole **plus** every hole across all bundles, so the win condition and HUD are
+automatic. Wire `Prefabs/Ingame/Factory.prefab` into `LevelPrefabs.factorie` (the `HoleFactory`
+component is added at runtime if the prefab doesn't carry one); holes are spawned from the same
+`Hole.prefab` in `LevelPrefabs.hole`. **Sample Level 2** showcases it: one factory cycles Red→Green→
+Blue ×3.
+
+> **Holes only spawn at factories.** `LevelManager` no longer drops holes straight onto the loop —
+> every standalone `LevelData.holes` entry is wrapped into its own single-hole factory at the hole's
+> `trackPosition` (or its pinned placement), so all holes appear through the factory mechanism above.
+> Consequence: any level that lists holes (standalone or bundle) needs the **factory prefab** assigned,
+> or `LevelManager` logs an error and skips the holes.
 
 ---
 

@@ -26,6 +26,13 @@ namespace PeopleFlow
         [SerializeField] float m_fieldOfView = 55f;
         [SerializeField] Color m_background = new Color(0.83f, 0.90f, 0.98f);
 
+        [Header("Level prefabs (required)")]
+        [Tooltip("Drag in the Hole, Lane (WaitingArea) and Character (Minion) prefabs the level is built from.")]
+        [SerializeField] LevelPrefabs m_prefabs = new LevelPrefabs();
+
+        [Tooltip("Optional PeopleColor → Material overrides, forwarded to the LevelManager.")]
+        [SerializeField] ColorMaterialSet m_colorMaterials = new ColorMaterialSet();
+
         GameObject m_root;     // container for managers + gameplay (one-call teardown)
         LevelData m_level;
         bool m_subscribed;
@@ -70,9 +77,11 @@ namespace PeopleFlow
             var input = m_root.AddComponent<InputManager>();
             var timer = m_root.AddComponent<Timer>();
             var levelManager = m_root.AddComponent<LevelManager>();
+            levelManager.ConfigurePrefabs(m_prefabs);
+            levelManager.ConfigureMaterials(m_colorMaterials);
 
             Subscribe();
-            levelManager.Build(m_level, new MaterialLibrary(), input, timer);
+            levelManager.Build(m_level, input, timer);
         }
 
         public void PauseGame() => GameManager.Instance?.Pause();
@@ -103,12 +112,16 @@ namespace PeopleFlow
         void HandleWin() => LevelCompleted?.Invoke(SurvivorCount());
         void HandleLose(LoseReason reason) => LevelFailed?.Invoke();
 
-        /// <summary>People that reached holes on a win = the total required across all holes.</summary>
+        /// <summary>People that reached holes on a win = the total required across all holes,
+        /// standalone and factory-produced alike.</summary>
         int SurvivorCount()
         {
             int n = 0;
             if (m_level?.holes != null)
                 foreach (var h in m_level.holes) n += Mathf.Max(0, h.requiredCount);
+            if (m_level?.holeFactories != null)
+                foreach (var f in m_level.holeFactories)
+                    foreach (var h in f.bundle) n += Mathf.Max(0, h.requiredCount);
             return n;
         }
 

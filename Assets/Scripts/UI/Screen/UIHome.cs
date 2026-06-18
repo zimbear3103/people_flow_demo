@@ -18,9 +18,6 @@ public class UIHome : UIScreen
     [SerializeField] private Image m_mainBackground;
     [SerializeField] Sprite[] m_listBackgrounds;
 
-    [Header("Capybara")]
-    [SerializeField] private GameObject m_capybara;
-    [SerializeField] private float m_speedCapybara = 1f;
     [SerializeField] private ScrollRect m_scrollLevel;
 
     [Header("Bottom Buttons")]
@@ -37,9 +34,6 @@ public class UIHome : UIScreen
         m_playButton.onClick.AddListener(OnPlayButtonPressed);
         m_settingButton.onClick.AddListener(OnSettingButtonPressed);
         m_coinButton.onClick.AddListener(OnCoinButtonPressed);
-        m_shopButton.onValueChanged.AddListener(OnShopTogglePressed);
-        m_homeButton.onValueChanged.AddListener(OnHomeTogglePressed);
-        m_leaderboardButton.onValueChanged.AddListener(OnLeaderboardTogglePressed);
     }
 
     private void OnDisable()
@@ -47,9 +41,6 @@ public class UIHome : UIScreen
         m_playButton.onClick.RemoveListener(OnPlayButtonPressed);
         m_settingButton.onClick.RemoveListener(OnSettingButtonPressed);
         m_coinButton.onClick.RemoveListener(OnCoinButtonPressed);
-        m_shopButton.onValueChanged.RemoveListener(OnShopTogglePressed);
-        m_homeButton.onValueChanged.RemoveListener(OnHomeTogglePressed);
-        m_leaderboardButton.onValueChanged.RemoveListener(OnLeaderboardTogglePressed);
     }
 
     private void Start()
@@ -95,41 +86,6 @@ public class UIHome : UIScreen
         Debug.Log("Coin button pressed");
     }
 
-    private void OnShopTogglePressed(bool isOn)
-    {    
-        if(isOn)
-        {
-          
-        }
-        else
-        {
-            
-        }
-    }
-
-    private void OnHomeTogglePressed(bool isOn)
-    {
-        if (isOn)
-        {
-
-        }
-        else
-        {
-
-        }
-    }
-
-    private void OnLeaderboardTogglePressed(bool isOn)
-    {
-        if (isOn)
-        {
-
-        }
-        else
-        {
-
-        }
-    }
 
     private void SetLevelUI()
     {
@@ -190,7 +146,6 @@ public class UIHome : UIScreen
             if (m_levelNodes[i].Level == (UserProfile.Instance.Level + 1))
             {
                 m_levelNodes[i].OnActiveLevel();
-                m_capybara.transform.position = m_levelNodes[i].PosCapy.position;
             }
         }
     }    
@@ -209,14 +164,12 @@ public class UIHome : UIScreen
         float startPos = m_scrollLevel.verticalNormalizedPosition;
         float targetPos = 0.44f;
         float time = 0f;
-        Vector3 capyWorldPos = m_capybara.transform.position;
 
         while (time < duration)
         {
             time += Time.deltaTime;
             float t = time / duration;
             m_scrollLevel.verticalNormalizedPosition = Mathf.Lerp(startPos, targetPos, t);
-            m_capybara.transform.position = capyWorldPos;
             yield return null;
         }
 

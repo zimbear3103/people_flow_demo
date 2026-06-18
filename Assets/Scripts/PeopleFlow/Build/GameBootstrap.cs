@@ -3,10 +3,11 @@ using UnityEngine;
 namespace PeopleFlow
 {
     /// <summary>
-    /// One-component entry point for the Game scene. Drop this on a single empty GameObject and
-    /// press Play: it creates the camera, light, all managers, the UI, and builds the level
-    /// (procedurally, from primitives) — no manual scene wiring required. You can still place
-    /// configured managers / a LevelData asset yourself and this will use them instead.
+    /// One-component entry point for the Game scene. Drop this on a single empty GameObject, assign
+    /// the level prefabs, and press Play: it creates the camera, light, all managers, the UI, and
+    /// builds the level by instantiating the assigned Hole / Lane / Character prefabs — no manual
+    /// scene wiring required. You can still place configured managers / a LevelData asset yourself
+    /// and this will use them instead.
     /// </summary>
     public class GameBootstrap : MonoBehaviour
     {
@@ -16,6 +17,14 @@ namespace PeopleFlow
         [SerializeField] LevelData m_overrideLevel;
         [Tooltip("If >= 0, forces this built-in sample index (handy for testing in the Editor).")]
         [SerializeField] int m_forceLevelIndex = -1;
+
+        [Header("Level prefabs (required)")]
+        [Tooltip("Drag in the Hole, Lane (WaitingArea) and Character (Minion) prefabs. Forwarded to " +
+                 "the LevelManager, which instantiates them to build the level.")]
+        [SerializeField] LevelPrefabs m_prefabs = new LevelPrefabs();
+
+        [Tooltip("Optional PeopleColor → Material overrides, forwarded to the LevelManager.")]
+        [SerializeField] ColorMaterialSet m_colorMaterials = new ColorMaterialSet();
 
         [Header("Camera")]
         [SerializeField] float m_cameraPitch = 52f;
@@ -43,9 +52,10 @@ namespace PeopleFlow
             var input = Ensure<InputManager>("InputManager");
             var timer = Ensure<Timer>("Timer");
             var levelManager = Ensure<LevelManager>("LevelManager");
+            levelManager.ConfigurePrefabs(m_prefabs);
+            levelManager.ConfigureMaterials(m_colorMaterials);
 
-            var mats = new MaterialLibrary();
-            levelManager.Build(level, mats, input, timer);
+            levelManager.Build(level, input, timer);
 
             PositionCamera(cam, level);
         }

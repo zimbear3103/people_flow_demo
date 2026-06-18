@@ -46,6 +46,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2b2ac528bb0811949ad9a753bd31c155, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PeopleFlow.Hole
+  m_holeGameObj: {fileID: 8408682766711076445}
+  m_holeInGameObj: {fileID: 6542019494651017275}
+  m_colorHole: 0
+  m_required: 1
+  m_trackT: 0.5
 --- !u!1 &6542019494651017275
 GameObject:
   m_ObjectHideFlags: 0
@@ -202,7 +207,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: acc029d0432e35a4e8c8897108fe8cd3, type: 2}
+  - {fileID: 5354609731119464964, guid: 8c52031fc4e89e04fa38a5164d0bf948, type: 3}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
