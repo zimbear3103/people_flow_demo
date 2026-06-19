@@ -47,8 +47,7 @@ public class UIContinue : UIPopup
         Hide();
 
         UserProfile.Instance.SaveGameData();
-
-        GamePlayController.Instance.ReviveLevel();
+        UIManager.Instance.ShowPopup(PopupType.LevelFail);
     }
 
     //Watch ad to continue
@@ -56,5 +55,7 @@ public class UIContinue : UIPopup
     {
         SoundManager.Instance.OnPlaySfxAudio(ESoundId.UI_Click_Other);
         UserProfile.Instance.SaveGameData();
+
+        GamePlayController.Instance.ReviveLevel();
     }
 }

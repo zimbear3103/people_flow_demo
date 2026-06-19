@@ -46,7 +46,9 @@ namespace PeopleFlow
 
             // Order matters only in that managers must exist before LevelManager.Build runs;
             // AddComponent triggers each Awake synchronously, so singletons are ready immediately.
-            Ensure<GameManager>("GameManager");
+            // The referee is now GamePlayController; create one in standalone mode (no host shell) so
+            // the gameplay scripts that gate on it can run this demo scene on their own.
+            EnsureStandaloneController();
             Ensure<AudioManager>("AudioManager");
             Ensure<UIManager>("UIManager");
             var input = Ensure<InputManager>("InputManager");
@@ -72,6 +74,15 @@ namespace PeopleFlow
             var existing = Object.FindAnyObjectByType<T>();
             if (existing != null) return existing;
             return new GameObject(name).AddComponent<T>();
+        }
+
+        static GamePlayController EnsureStandaloneController()
+        {
+            var gpc = GamePlayController.Instance;
+            if (gpc == null)
+                gpc = new GameObject("GamePlayController").AddComponent<GamePlayController>();
+            gpc.ConfigureAsStandalone();
+            return gpc;
         }
 
         Camera EnsureCamera(LevelData level)

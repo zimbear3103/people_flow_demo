@@ -27,24 +27,25 @@ designer-friendly level assets, and how to extend it.
 
 ## 1. Architecture at a glance
 
-Systems are decoupled through **C# events on a central referee** (`GameManager`). Nobody holds a
-web of references to everybody.
+Systems are decoupled through **C# events on a central referee** — the global **`GamePlayController`**
+(it absorbed the old `GameManager`). Nobody holds a web of references to everybody.
 
 ```
-GameBootstrap ──builds──▶ camera / light / managers / UI
+Host:        GamePlayController.OnSetupGameLevel(level)   // picks LevelData from its m_levels[]
+Standalone:  GameBootstrap (Game.unity)                   // ensures a standalone GamePlayController
         │
         └─▶ LevelManager.Build(LevelData)
                 ├─ RunwayTrack   (oval polyline, arc-length lookup, capacity, JAM detection)
                 ├─ Factory × N   (every hole spawns here; standalone holes = single-hole factories)
                 ├─ Lane × M      (queue, tap-hold release, barrier)
-                └─ binds InputManager / Timer / UIManager, then GameManager.BeginLevel()
+                └─ binds InputManager / Timer / UIManager, then GamePlayController.BeginLevel()
 
-Hole.Commit() ─────▶ GameManager.ReportHoleCompleted()  ─┐
-RunwayTrack (full + ▶ GameManager.ReportRunwayJam()      ├─▶ decides Win / Lose
-   no viable move)                                       │   and raises events:
-Timer hits 0  ─────▶ GameManager.ReportTimeOut()        ─┘   OnHoleProgress / OnLevelWin /
-                                                              OnLevelLose / OnStateChanged
-UIManager & AudioManager just SUBSCRIBE to those events.
+Hole.Commit() ─────▶ GamePlayController.ReportHoleCompleted() ─┐
+RunwayTrack (full + ▶ GamePlayController.ReportRunwayJam()     ├─▶ decides Win / Lose, drives the
+   no viable move)                                            │   host state machine, and raises:
+Timer hits 0  ─────▶ GamePlayController.ReportTimeOut()       ─┘   OnHoleProgress / OnLevelWin / OnLevelLose
+
+Gameplay gates on GamePlayController.IsGamePlaying; UIManager & AudioManager SUBSCRIBE to its events.
 ```
 
 **Why it can't be cheesed:** pushing is blocked when the runway is at capacity, and you only lose
@@ -63,9 +64,9 @@ position between frames (`PassedForward`, wrap-aware at t=0/1), not by a proximi
 
 | Folder | Script | Role |
 |---|---|---|
-| Core | `GameEnums.cs` | `GameState`, `LoseReason`, `PeopleColor`, `HoleMechanic` |
-| Core | `GameSession.cs` | static carrier for selected level + scene names |
-| Core | `GameManager.cs` | state machine + win/lose referee + events + navigation |
+| Core | `GameEnums.cs` | `LoseReason`, `PeopleColor`, `HoleMechanic` (`GameState` is legacy/unused) |
+| Core | `GameSession.cs` | static carrier for selected level + scene names + scene-nav helpers |
+| (root) | `GamePlayController.cs` | **the referee** — hole counting, win/lose, `OnHoleProgress`/`OnLevelWin`/`OnLevelLose`, `IsGamePlaying`; builds + starts the level in `OnSetupGameLevel` (absorbed `GameManager` + `PeopleFlowGameController`) |
 | Core | `Timer.cs` | level countdown → `ReportTimeOut` |
 | Core | `InputManager.cs` | tap-and-hold per lane (Pointer raycast) |
 | Core | `LevelManager.cs` | builds runway/holes/lanes from `LevelData`, wires everything |
@@ -101,7 +102,7 @@ Game scene
 ├─ GameBootstrap            (GameBootstrap.cs)            ← the only object you place
 ├─ Main Camera              (angled ~52°, perspective)    ← auto
 ├─ Directional Light                                       ← auto
-├─ GameManager / AudioManager / UIManager / InputManager / Timer / LevelManager  ← auto (one each)
+├─ GamePlayController (standalone referee) + AudioManager / UIManager / InputManager / Timer / LevelManager  ← auto
 ├─ EventSystem              (InputSystemUIInputModule)     ← auto
 ├─ PF_Canvas                (HUD + popups)                 ← auto
 ├─ RunwayTrack              (+ Ground, TrackLine, EntryMarker)
@@ -125,11 +126,11 @@ List** with **MainMenu first (index 0)** and **Game second (index 1)**.
 
 Holes, lanes and characters are built by **instantiating prefab assets you drag into the inspector**,
 not from primitives in code. Assign them in the `LevelPrefabs` block on **`GameBootstrap`** (the
-single object you drop into the `Game` scene) — or directly on a placed **`LevelManager`** /
-**`PeopleFlowGameController`**. The entry components forward whatever you set onto the LevelManager
-that actually runs the build, so configuring the one scene object is enough. If a hole, lane, or the
-character prefab is missing, `LevelManager.Build` logs an error naming what's missing and aborts (no
-procedural fallback).
+single object you drop into the `Game` scene), on the host **`GamePlayController`** (its `m_prefabs`),
+or directly on a placed **`LevelManager`**. The entry components forward whatever you set onto the
+LevelManager that actually runs the build, so configuring the one scene object is enough. If a hole,
+lane, or the character prefab is missing, `LevelManager.Build` logs an error naming what's missing and
+aborts (no procedural fallback).
 
 The fields are plain `GameObject` references, one prefab per role:
 
@@ -172,7 +173,7 @@ The bundled art prefabs under `Assets/Prefabs/Ingame/` are already wired (drag t
 ```
 levelNumber, timeLimit, runwayCapacity, runSpeed, loopWidth, loopHeight,
 trackPlacement : TransformSpec  // pin / rotate / scale the whole loop (off = centred on origin)
-lanes  : List<LaneSetup>  { characters[], barrier, unlockAfterHolesCompleted, placement }
+lanes  : List<LaneSetup>  { characters[] (optional — auto-filled from holes when empty), groupSize, barrier, unlockAfterHolesCompleted, placement }
 holes  : List<HoleSetup>  { color, requiredCount, trackPosition(0..1), hidden, mechanic, unlockAfterHolesCompleted, placement }
 holeFactories : List<HoleFactorySetup> { trackPosition(0..1), bundle: List<HoleSetup>, placement }  // one position, holes produced one at a time
 arrows : List<ArrowSetup> { trackPosition, length, speedMultiplier }
@@ -195,6 +196,16 @@ automatically — factories from their normalised `trackPosition`, lanes auto-sp
 edge. So a level's whole geometry is data-driven from `LevelData`: `LevelManager.Build` instantiates
 `RunwayTrack` (under itself), the factories (under **Factories**) and the lanes (under **Lanes**),
 placing each from its spec.
+
+**Supply (people) is derived from the holes.** A lane's waiting queue (`LaneSetup.characters`) is
+**optional**. At build time `LevelManager` fills every lane left empty from the **hole demand** — the
+total `requiredCount` per colour across all standalone holes *and* every factory bundle — dealt as
+whole single-colour groups (size `LaneSetup.groupSize`), shuffled (seeded by level number) and
+round-robined across the empty lanes, so **supply == demand**. Example: a factory bundling Red×12 +
+Blue×12 yields **12 red + 12 blue** previews on the lanes. Lanes you *do* author keep their exact
+queue, and the auto-fill deals only the **remaining** demand across the empty ones — so you can pin
+specific colours to specific lanes (as L4/L5 do for their locked-hole puzzles) and let the rest fill
+in automatically. Shared dealer: `SupplyDealer` (also used by `DefaultLevels` at authoring time).
 
 **The game ships with 5 code-defined levels** (`DefaultLevels.cs`) so it runs with zero authored
 assets, and **every one is provably solvable** (see the solvability guarantee in that file):
@@ -258,7 +269,7 @@ scene list ▸ Build. It also runs in the **Editor** via Play.
 **Audio (optional):** all clips on `AudioManager` are `[SerializeField]` and default to none (the
 game runs silent-but-fine). To add sound, put a `AudioManager` GameObject in the scene yourself
 with your royalty-free clips assigned — the bootstrap will use the existing one instead of creating
-a bare one. Same trick works for a pre-configured `GameManager`/`UIManager`/etc.
+a bare one. Same trick works for a pre-configured `GamePlayController`/`UIManager`/etc.
 
 ---
 
@@ -269,14 +280,14 @@ All are data-driven via `LevelData`, so you enable them per level with no code c
 | Mechanic | Status | Script(s) | Toggle in LevelData |
 |---|---|---|---|
 | **Hidden color** | ✅ | `Hole`, `People` | `HoleSetup.hidden = true` (shows "?" until a runner passes near and `RevealIfHidden` fires) |
-| **Frozen hole** | ✅ | `Hole` (+ `GameManager.OnHoleProgress`) | `HoleSetup.mechanic = Frozen`, `unlockAfterHolesCompleted = N` (ice dome until N other holes done) |
+| **Frozen hole** | ✅ | `Hole` (+ `GamePlayController.OnHoleProgress`) | `HoleSetup.mechanic = Frozen`, `unlockAfterHolesCompleted = N` (ice dome until N other holes done) |
 | **Hole gate** | ✅ | `Hole` | `HoleSetup.mechanic = Gate`, `unlockAfterHolesCompleted = N` (barred until N done) |
 | **Lane barrier** | ✅ | `Lane` | `LaneSetup.barrier = true`, `unlockAfterHolesCompleted = N` |
 | **Arrow / speed zone** | ✅ (bonus) | `RunwayTrack`, `People` | add an `ArrowSetup { trackPosition, length, speedMultiplier }` |
 | **Hole factory (bundle)** | ✅ | `HoleFactory`, `Hole` | add a `HoleFactorySetup { trackPosition, bundle: List<HoleSetup> }` to `LevelData.holeFactories` |
 
-The "locked" mechanics share one signal — `GameManager.OnHoleProgress(completed, total)` — so a hole
-or lane unlocks the moment enough *other* holes are finished.
+The "locked" mechanics share one signal — `GamePlayController.OnHoleProgress(completed, total)` — so a
+hole or lane unlocks the moment enough *other* holes are finished.
 
 **Hole factory.** A factory occupies one `trackPosition` and produces a *bundle* of holes one at a
 time: hole `0` pops in; when a runner fills it, it fires `Hole.OnCompleted`, the factory unregisters

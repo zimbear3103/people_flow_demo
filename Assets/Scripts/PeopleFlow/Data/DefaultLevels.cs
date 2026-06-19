@@ -29,8 +29,9 @@ namespace PeopleFlow
 
         /// <summary>Minions per full single-colour group. Hole counts are multiples of this and supply
         /// is dealt in blocks of it, so every released group is full. Mirrors the Lane's release size
-        /// (pushed into each lane via <see cref="LaneSetup.groupSize"/>).</summary>
-        public const int GroupSize = 3;
+        /// (pushed into each lane via <see cref="LaneSetup.groupSize"/>). Shared with the build-time
+        /// dealer (<see cref="SupplyDealer.DefaultGroupSize"/>).</summary>
+        public const int GroupSize = SupplyDealer.DefaultGroupSize;
 
         // Short aliases keep the level tables readable.
         const PeopleColor R = PeopleColor.Red;
@@ -203,46 +204,14 @@ namespace PeopleFlow
             data.holes = holes;
             if (factories != null) data.holeFactories = factories;
 
-            // Demand per colour = slots across all holes (standalone + every factory-bundle hole),
-            // tracked in first-seen order so the seeded shuffle below is deterministic.
+            // Supply == demand: total per-colour hole demand, broken into whole single-colour groups
+            // of GroupSize and shuffled (seeded), then round-robined onto the lanes. This is the same
+            // dealing LevelManager runs at build time to fill empty lanes — done here at authoring
+            // time so the generated sample assets ship with their queues already populated.
             var order = new List<PeopleColor>();
             var demand = new Dictionary<PeopleColor, int>();
-            void AddDemand(HoleSetup hole)
-            {
-                if (!demand.ContainsKey(hole.color)) order.Add(hole.color);
-                demand.TryGetValue(hole.color, out int n);
-                demand[hole.color] = n + Mathf.Max(1, hole.requiredCount);
-            }
-            foreach (var hole in holes) AddDemand(hole);
-            if (factories != null)
-                foreach (var f in factories)
-                    foreach (var hole in f.bundle) AddDemand(hole);
-
-            // Break each colour's supply into whole groups of GroupSize so every waiting group is
-            // full. (If a colour's demand isn't a multiple of GroupSize, the leftover forms one
-            // smaller group so supply still exactly equals demand — solvability is preserved.)
-            var groups = new List<List<PeopleColor>>();
-            foreach (var color in order)
-            {
-                int remaining = demand[color];
-                while (remaining > 0)
-                {
-                    int size = Mathf.Min(GroupSize, remaining);
-                    var g = new List<PeopleColor>(size);
-                    for (int i = 0; i < size; i++) g.Add(color);
-                    groups.Add(g);
-                    remaining -= size;
-                }
-            }
-
-            // Shuffle whole groups (never individuals) so lanes get a varied — but always complete —
-            // mix of colour groups.
-            var rng = new System.Random(seed);
-            for (int i = groups.Count - 1; i > 0; i--)
-            {
-                int j = rng.Next(i + 1);
-                (groups[i], groups[j]) = (groups[j], groups[i]);
-            }
+            SupplyDealer.ComputeDemand(data, order, demand);
+            var groups = SupplyDealer.DealGroups(order, demand, GroupSize, seed);
 
             data.lanes = new List<LaneSetup>();
             for (int i = 0; i < laneCount; i++) data.lanes.Add(new LaneSetup { groupSize = GroupSize });

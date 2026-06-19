@@ -438,8 +438,6 @@ MonoBehaviour:
   m_musicSource: {fileID: 184836050067619786}
   m_voiceSource: {fileID: 5448584291074623419}
   m_sfxSounds:
-  - m_name: Ingame_BulletImpact
-    m_clip: {fileID: 8300000, guid: ca86fd7f928b5c24c85b55758a8bb3e0, type: 3}
   - m_name: UI_Click_ButtonMain
     m_clip: {fileID: 8300000, guid: c8fb067738f83474182559009a9817f0, type: 3}
   - m_name: UI_Click_ButtonNegative
@@ -448,20 +446,6 @@ MonoBehaviour:
     m_clip: {fileID: 8300000, guid: 4341f5fa06d04c04096eb31c2288ac9e, type: 3}
   - m_name: Ingame_CapyRun
     m_clip: {fileID: 8300000, guid: e773165fbd70b9645b780681eba83fa0, type: 3}
-  - m_name: Ingame_CrateCollision
-    m_clip: {fileID: 8300000, guid: ee44f350b5a6c984696d1bc239f7d050, type: 3}
-  - m_name: Ingame_CrateExplode
-    m_clip: {fileID: 8300000, guid: 47224d98da5f3c047af83e661013bfae, type: 3}
-  - m_name: Ingame_EnemyAttack
-    m_clip: {fileID: 8300000, guid: 0feb331147953a947ae6225d0a4bf3fb, type: 3}
-  - m_name: Ingame_EnemySplash
-    m_clip: {fileID: 8300000, guid: 6562afc8e259e934abc467ede06baad8, type: 3}
-  - m_name: Ingame_GeneralBooster
-    m_clip: {fileID: 8300000, guid: 3e299d812267bca45916173d9437a1c5, type: 3}
-  - m_name: Ingame_GunShot
-    m_clip: {fileID: 8300000, guid: fbf3467a634e3ff429c6fbe9ed6be646, type: 3}
-  - m_name: Ingame_Overload
-    m_clip: {fileID: 8300000, guid: bd2072b88235c7944adb37fcd190542e, type: 3}
   m_musicSounds:
   - m_name: Bg_Deafeat
     m_clip: {fileID: 8300000, guid: 0a99fd0c5f7105f40a7f4291719898ef, type: 3}
@@ -471,13 +455,7 @@ MonoBehaviour:
     m_clip: {fileID: 8300000, guid: 5b7cab0534983ab4f87896381b057350, type: 3}
   - m_name: Bg_Victory
     m_clip: {fileID: 8300000, guid: 0ce2174e6c380254e9ec129ccddfc688, type: 3}
-  m_voiceSounds:
-  - m_name: Voice_CapyFear
-    m_clip: {fileID: 8300000, guid: 1d424d8495264094e86481c870b4e428, type: 3}
-  - m_name: Voice_CapyHit
-    m_clip: {fileID: 8300000, guid: ed914ba133d0dc441bdf05d8fd265e99, type: 3}
-  - m_name: Voice_CapyWin
-    m_clip: {fileID: 8300000, guid: d0a4bd33c6a5fbe47bbeeab8790a93c6, type: 3}
+  m_voiceSounds: []
 --- !u!1 &7745160394103274741
 GameObject:
   m_ObjectHideFlags: 0
@@ -490,7 +468,6 @@ GameObject:
   - component: {fileID: 2384118837480624944}
   - component: {fileID: 3706373966307511434}
   - component: {fileID: 365308519692808066}
-  - component: {fileID: 6614647353342948038}
   m_Layer: 0
   m_Name: System
   m_TagString: Untagged
@@ -554,17 +531,3 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8fc9d37e57470c843ac02072ec629114, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!114 &6614647353342948038
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7745160394103274741}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1e6d466ccfb2fa041ac711ae1c6a3dc0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_gameLevels: {fileID: 0}
-  m_showDebugInfo: 0

@@ -43,6 +43,7 @@ namespace PeopleFlow
 
         bool m_hidden;
         bool m_revealed;
+        bool m_isPreview;   // a non-interactive "next hole" preview shown by a HoleFactory
         HoleMechanic m_mechanic;
         int m_unlockAfter;
         int m_observedCompleted;
@@ -67,26 +68,52 @@ namespace PeopleFlow
             m_mechanic = setup.mechanic;
             m_unlockAfter = setup.unlockAfterHolesCompleted;
 
-            if (GameManager.Instance != null)
+            if (GamePlayController.Instance != null)
             {
-                GameManager.Instance.OnHoleProgress += OnHoleProgress;
-                m_observedCompleted = GameManager.Instance.CompletedHoles;
+                GamePlayController.Instance.OnHoleProgress += OnHoleProgress;
+                m_observedCompleted = GamePlayController.Instance.CompletedHoles;
             }
 
             BindVisuals();
             RefreshLockVisual();
         }
 
+        /// <summary>
+        /// Configure this hole as a non-interactive <em>preview</em> of an upcoming hole: it shows the
+        /// colour, fill target and special (hidden / locked) state, but never registers with the track,
+        /// accepts runners, fires <see cref="OnCompleted"/>, or reports progress. Used by
+        /// <see cref="HoleFactory"/> to show the next hole in its bundle at the preview slot.
+        /// </summary>
+        public void SetupPreview(HoleSetup setup, MaterialLibrary mats)
+        {
+            m_mats = mats;
+            m_colorHole = setup.color;
+            m_required = Mathf.Max(1, setup.requiredCount);
+            TrackT = setup.trackPosition;
+            m_hidden = setup.hidden;
+            m_mechanic = setup.mechanic;
+            m_unlockAfter = setup.unlockAfterHolesCompleted;
+            m_isPreview = true;
+
+            // Snapshot the completed-hole count so a still-locked upcoming hole previews as locked. We
+            // don't subscribe to progress — the preview is replaced by a real hole when it goes live.
+            if (GamePlayController.Instance != null)
+                m_observedCompleted = GamePlayController.Instance.CompletedHoles;
+
+            BindVisuals(withBurst: false);
+            RefreshLockVisual();
+        }
+
         void OnDestroy()
         {
-            if (GameManager.Instance != null)
-                GameManager.Instance.OnHoleProgress -= OnHoleProgress;
+            if (GamePlayController.Instance != null)
+                GamePlayController.Instance.OnHoleProgress -= OnHoleProgress;
         }
 
         // ---- acceptance / reservation --------------------------------------
 
         public bool CanAccept(PeopleColor c)
-            => !IsComplete && !IsLocked && c == Color && (Required - Filled - Reserved) > 0;
+            => !m_isPreview && !IsComplete && !IsLocked && c == Color && (Required - Filled - Reserved) > 0;
 
         /// <summary>Reserve one slot for an incoming runner. Returns false if it cannot be served.</summary>
         public bool TryReserve(PeopleColor c)
@@ -123,7 +150,7 @@ namespace PeopleFlow
 
             AudioManager.Instance?.PlayHoleComplete();
             Haptics.Success();
-            GameManager.Instance?.ReportHoleCompleted(this);
+            GamePlayController.Instance?.ReportHoleCompleted(this);
             OnCompleted?.Invoke(this);
         }
 
@@ -154,7 +181,7 @@ namespace PeopleFlow
             ApplyColor();
         }
 
-        void BindVisuals()
+        void BindVisuals(bool withBurst = true)
         {
             m_renderers = Prim.CollectTintable(gameObject);
             if (m_renderers.Length == 0)
@@ -163,7 +190,8 @@ namespace PeopleFlow
             var overlay = Prim.FindDescendant(transform, "Ice", "Frozen", "Gate", "Lock");
             if (overlay != null) m_lockOverlay = overlay.gameObject;
 
-            m_burst = Prim.CreateBurst(transform, Color.ToColor());
+            // A preview never completes, so it skips the completion burst.
+            if (withBurst) m_burst = Prim.CreateBurst(transform, Color.ToColor());
             ApplyColor();
         }
 

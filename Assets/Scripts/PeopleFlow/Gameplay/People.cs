@@ -23,6 +23,7 @@ namespace PeopleFlow
         public bool IsJumping { get; private set; }       // hopping into a hole
         public bool IsPreview { get; private set; }        // standing in a lane queue, not yet on the track
         public bool IsEnteringRoad { get; private set; }   // hopping from the lane onto the track
+        public bool IsPendingPeel { get; private set; }    // reserved a hole, waiting its turn to drop in
 
         /// <summary>The slot in the lane line this preview should ease toward (set by <see cref="Lane"/>).</summary>
         public Vector3 PreviewTarget { get; set; }
@@ -36,13 +37,22 @@ namespace PeopleFlow
         float m_t;
         float m_speed;
         Vector3 m_entryLanding;
+        RunnerGroup m_group;   // non-null while this runner is part of a moving crowd block
+        private Animator m_animator;
 
+        /// <summary>True while this runner belongs to a <see cref="RunnerGroup"/> that drives its
+        /// position; such a runner does not self-advance along the loop.</summary>
+        public bool IsInGroup => m_group != null;
         // ---- factory --------------------------------------------------------
 
         /// <summary>
         /// Instantiate a runner from the assigned character prefab, tint its body to
         /// <paramref name="color"/>, and start it running from <paramref name="startT"/>.
-        /// </summary>
+        /// </summary>\
+        private void Start()
+        {
+            m_animator = GetComponent<Animator>();
+        }
         public static People Spawn(GameObject prefab, PeopleColor color, RunwayTrack track,
             MaterialLibrary mats, float startT, float speed, Transform parent)
         {
@@ -172,6 +182,72 @@ namespace PeopleFlow
             });
         }
 
+        // ---- crowd block ----------------------------------------------------
+
+        /// <summary>The <see cref="RunnerGroup"/> calls this when this runner joins a block. It then
+        /// drives the runner's pose, so <see cref="Update"/> stops self-advancing it.</summary>
+        internal void SetGroup(RunnerGroup group) => m_group = group;
+
+        /// <summary>
+        /// Send a preview minion from its lane slot into a moving crowd <see cref="RunnerGroup"/>: hop
+        /// one-by-one (after <paramref name="delay"/>) toward this member's grid slot, then hand control
+        /// to the group, which drives it in formation. Registers immediately so it still counts toward
+        /// runway capacity, and reports a near-entry spacing position so a held lane doesn't spawn the
+        /// next crowd on top of this one before it has formed up.
+        /// </summary>
+        public void LaunchIntoGroup(RunwayTrack track, RunnerGroup group, int row, int col, float delay = 0f)
+        {
+            if (track == null || group == null) return;
+            transform.position = PreviewTarget; // start the hop from the exact tray slot
+            IsPreview = false;
+            IsEnteringRoad = true;
+            m_track = track;
+            m_group = group;
+            m_entryLanding = group.SlotWorldNow(row, col, out _); // approximate entry occupancy for spacing
+            track.Register(this);
+
+            StartCoroutine(GroupEntryRoutine(group, row, col, Mathf.Max(0f, delay)));
+        }
+
+        IEnumerator GroupEntryRoutine(RunnerGroup group, int row, int col, float delay)
+        {
+            for (float e = 0f; e < delay; e += Time.deltaTime)
+                yield return null;
+
+            // Aim the hop at the slot's current position; the group eases out the small residual (the
+            // slot drifts forward while we are mid-air) with a short blend once we land.
+            Vector3 landing = group.SlotWorldNow(row, col, out Quaternion landRot);
+            m_entryLanding = landing;
+            transform.rotation = landRot;
+            yield return TweenUtil.HopArc(transform, landing, JumpHeight, JumpDuration, () =>
+            {
+                transform.rotation = landRot;
+                IsEnteringRoad = false;
+                group.NotifyEntered(this);
+            });
+        }
+
+        /// <summary>The group writes this runner's world pose each frame while it runs in formation.</summary>
+        internal void SetGroupPose(Vector3 pos, Quaternion rot)
+        {
+            transform.SetPositionAndRotation(pos, rot);
+            if (m_animator != null) m_animator.SetBool("isRun", true);
+        }
+
+        /// <summary>The group calls this when it reserves a hole's slot for this runner — it will drop
+        /// in shortly. Flags it as a pending move so the runway-jam check doesn't treat a crowd waiting
+        /// its peel turn as a dead-locked, full runway.</summary>
+        internal void MarkPendingPeel() => IsPendingPeel = true;
+
+        /// <summary>The group hands this runner the hole it reserved when its turn comes to drop in:
+        /// detach from the crowd and hop in via the shared jump path.</summary>
+        internal void PeelIntoHole(Hole hole)
+        {
+            m_group = null;        // the group has already removed us from its formation
+            IsPendingPeel = false; // IsJumping now covers us for the jam check
+            BeginJump(hole);
+        }
+
         // ---- run loop -------------------------------------------------------
 
         void Update()
@@ -180,15 +256,21 @@ namespace PeopleFlow
             {
                 // Ease toward the assigned slot so the waiting line slides forward as runners leave.
                 // Only while playing; otherwise snap settled so previews don't drift on the win/lose screen.
-                bool playing = GameManager.Instance != null && GameManager.Instance.State == GameState.Playing;
+                bool playing = GamePlayController.Instance != null && GamePlayController.Instance.IsGamePlaying;
                 transform.position = playing
                     ? Vector3.Lerp(transform.position, PreviewTarget, 1f - Mathf.Exp(-m_previewSlideSpeed * Time.deltaTime))
                     : PreviewTarget;
                 return;
             }
 
-            if (IsJumping || IsEnteringRoad || m_track == null || m_track.TotalLength <= 0f) return;
-            if (GameManager.Instance == null || GameManager.Instance.State != GameState.Playing) return;
+            if (IsJumping || IsEnteringRoad || m_track == null || m_track.TotalLength <= 0f)
+            {
+                m_animator.SetBool("isRun", false);
+                return; 
+            }
+            if (GamePlayController.Instance == null || !GamePlayController.Instance.IsGamePlaying) return;
+
+            if (IsInGroup) return; // a crowd member is positioned by its RunnerGroup, not self-driven
 
             float oldT = m_t;
             float mult = m_track.SpeedMultiplierAt(m_t);
@@ -198,6 +280,7 @@ namespace PeopleFlow
             transform.position = m_track.Evaluate(m_t, out var fwd);
             if (fwd.sqrMagnitude > 0.0001f)
                 transform.rotation = Quaternion.LookRotation(fwd);
+            m_animator.SetBool("isRun", true);
 
             CheckHoles(oldT, m_t);
         }

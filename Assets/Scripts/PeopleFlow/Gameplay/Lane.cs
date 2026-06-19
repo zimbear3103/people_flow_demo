@@ -33,6 +33,7 @@ namespace PeopleFlow
         [Tooltip("Extra height above the tray top to stand the waiting minions at (0 = right on the tray).")]
         [SerializeField] float m_previewStandOffset = 0f;
 
+        [SerializeField] Transform m_previewHolder = null;
         readonly List<People> m_previews = new List<People>(); // waiting minions; index 0 = front, grouped by GroupSize
         RunwayTrack m_track;
         MaterialLibrary m_mats;
@@ -47,7 +48,6 @@ namespace PeopleFlow
         float m_timer;
         bool m_wasHeld;
 
-        // Barrier (section 7)
         bool m_barrier;
         int m_unlockAfter;
         int m_observedCompleted;
@@ -62,7 +62,11 @@ namespace PeopleFlow
 
         // ---- setup ----------------------------------------------------------
 
-        public void Setup(LaneSetup setup, RunwayTrack track, MaterialLibrary mats,
+        /// <summary><paramref name="supply"/> is the ordered waiting queue (front = index 0) the
+        /// builder hands this lane. It is resolved from the level by <see cref="SupplyDealer"/>: an
+        /// authored lane gets its own <see cref="LaneSetup.characters"/> back; a lane the designer
+        /// left empty is filled from the holes' demand. May be null/empty (an empty pad).</summary>
+        public void Setup(LaneSetup setup, List<PeopleColor> supply, RunwayTrack track, MaterialLibrary mats,
             Transform runnersRoot, GameObject characterPrefab, float runSpeed, Vector3 padPosition)
         {
             m_track = track;
@@ -82,33 +86,24 @@ namespace PeopleFlow
             transform.position = padPosition;
             BindVisuals();
 
-            // The waiting line runs straight back from the tray, away from the road. All lanes share
-            // one entry point (x = 0) but sit at different x, so drop the x component — otherwise an
-            // off-centre lane's line would angle diagonally toward the entry instead of staying in
-            // its own column.
-            Vector3 back = padPosition - m_entryPos;
-            back.x = 0f;
-            back.y = 0f;
-            m_backDir = back.sqrMagnitude > 1e-4f ? back.normalized : Vector3.back;
+            m_backDir = Vector3.back;
 
-            // Horizontal axis a group's members spread along (perpendicular to the depth direction).
-            m_rightDir = Vector3.Cross(Vector3.up, m_backDir);
-            m_rightDir = m_rightDir.sqrMagnitude > 1e-4f ? m_rightDir.normalized : Vector3.right;
+            m_rightDir = Vector3.right;
 
-            SpawnPreviews(setup.characters);
+            SpawnPreviews(supply);
 
-            if (GameManager.Instance != null)
+            if (GamePlayController.Instance != null)
             {
-                GameManager.Instance.OnHoleProgress += OnHoleProgress;
-                m_observedCompleted = GameManager.Instance.CompletedHoles;
+                GamePlayController.Instance.OnHoleProgress += OnHoleProgress;
+                m_observedCompleted = GamePlayController.Instance.CompletedHoles;
                 RefreshBarrierVisual();
             }
         }
 
         void OnDestroy()
         {
-            if (GameManager.Instance != null)
-                GameManager.Instance.OnHoleProgress -= OnHoleProgress;
+            if (GamePlayController.Instance != null)
+                GamePlayController.Instance.OnHoleProgress -= OnHoleProgress;
         }
 
         // ---- waiting line ---------------------------------------------------
@@ -123,11 +118,8 @@ namespace PeopleFlow
             Quaternion faceRoad = FaceRoadRotation();
             for (int i = 0; i < clustered.Count; i++)
             {
-                // Parent previews under this lane so the waiting line belongs to (and stays on) it.
-                // On release they're re-parented to the shared runners root (see ReleaseGroup).
-                // Spawn at the lane origin; ReflowPreviews(snap) immediately places it in its slot.
-                var p = People.SpawnPreview(m_characterPrefab, clustered[i], m_mats, transform, transform.position, faceRoad);
-                if (p != null) m_previews.Add(p); // a missing/invalid prefab is already logged by SpawnPreview
+                var p = People.SpawnPreview(m_characterPrefab, clustered[i], m_mats, m_previewHolder, m_previewHolder.position, faceRoad);
+                if (p != null) m_previews.Add(p);
             }
             ReflowPreviews(snap: true);
         }
@@ -177,10 +169,7 @@ namespace PeopleFlow
 
         Quaternion FaceRoadRotation()
         {
-            // Face along the lane's own column toward the road (the opposite of the queue direction),
-            // so the whole line faces one way instead of angling toward the shared central entry.
-            Vector3 fwd = -m_backDir;
-            return fwd.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(fwd) : transform.rotation;
+            return Quaternion.LookRotation(Vector3.forward);
         }
 
         /// <summary>Lay the waiting line out as single-colour groups: a new group starts on each colour
@@ -215,7 +204,7 @@ namespace PeopleFlow
 
         void Update()
         {
-            if (GameManager.Instance == null || GameManager.Instance.State != GameState.Playing)
+            if (GamePlayController.Instance == null || !GamePlayController.Instance.IsGamePlaying)
             {
                 m_wasHeld = false;
                 return;
@@ -239,15 +228,15 @@ namespace PeopleFlow
         {
             if (m_previews.Count == 0 || Barriered) return false;
 
-            // Only release if the whole front (single-colour) group will fit on the runway. Cap by
-            // capacity so a colour block larger than the runway can still drain (in capacity-sized
-            // chunks) instead of dead-locking.
-            int groupCount = Mathf.Min(FrontGroupCount(), m_track.Capacity);
+            // Release the whole front (single-colour) group. We deliberately do NOT gate on runway
+            // capacity any more: while held, the player keeps feeding the runway, and overflowing it
+            // past capacity loses the level (see RunwayTrack's over-capacity check) instead of the
+            // release silently stalling.
+            int groupCount = FrontGroupCount();
             if (groupCount <= 0) return false;
-            if (m_track.Count + groupCount > m_track.Capacity) return false;
 
-            // Every landing slot the group will occupy must be clear (no runner within one body-length),
-            // so a new group never lands on the previous group's still-advancing members.
+            // Still gate on entry spacing so members enter single-file — the queue waits at the line
+            // until the entry clears, instead of stacking on top of the previous group.
             float gap = GroupEntryGap();
             for (int k = 0; k < groupCount; k++)
             {
@@ -262,7 +251,7 @@ namespace PeopleFlow
             m_previews.RemoveAll(p => p == null); // drop any destroyed entries defensively
             if (m_previews.Count == 0) return;
 
-            int count = Mathf.Min(FrontGroupCount(), m_track.Capacity);
+            int count = FrontGroupCount();
             if (count <= 0) return;
             // Stagger the group's landing points one body-length apart along the loop so the members
             // enter single-file from the bottom-centre entry instead of stacking on one spot.
@@ -274,13 +263,11 @@ namespace PeopleFlow
                 // Hand the runner off the lane to the shared runners root so it isn't moved by (or
                 // tied to) the lane once it's running the loop.
                 if (m_runnersRoot != null) member.transform.SetParent(m_runnersRoot, true);
-                // m_previews[0] is the group's leftmost member, so launching by ascending k gives a
-                // left-to-right wave; reversing the delay order flips it to right-to-left.
+
                 int order = m_releaseRightToLeft ? (count - 1 - k) : k;
                 member.LaunchToRoad(m_track, RunwayTrack.EntryT + k * gap, m_runSpeed, order * m_memberLaunchStagger);
             }
 
-            AudioManager.Instance?.PlayPush();
             ReflowPreviews();
         }
 

@@ -5,8 +5,8 @@ using UnityEngine;
 namespace PeopleFlow
 {
     /// <summary>
-    /// The closed loop runway. Builds an oval polyline from <see cref="LevelData"/>, exposes
-    /// constant-speed positions along it (arc-length parameterised), tracks how full it is, and
+    /// The closed loop runway. Builds an oval polyline from <see cref="LevelData"/> or a provided LineRenderer, 
+    /// exposes constant-speed positions along it (arc-length parameterised), tracks how full it is, and
     /// is the authority that detects a permanent jam (full + nobody has anywhere to go) → lose.
     /// </summary>
     public class RunwayTrack : MonoBehaviour
@@ -24,6 +24,7 @@ namespace PeopleFlow
         readonly List<People> m_runners = new List<People>();
         readonly List<Hole> m_holes = new List<Hole>();
         readonly List<HoleFactory> m_factories = new List<HoleFactory>();
+        readonly List<RunnerGroup> m_groups = new List<RunnerGroup>();  // crowd blocks the track drives
 
         /// <summary>Normalised position where lanes feed runners onto the loop (bottom centre).</summary>
         public const float EntryT = 0f;
@@ -39,40 +40,75 @@ namespace PeopleFlow
         public IReadOnlyList<Hole> Holes => m_holes;
 
         /// <summary>The world-space loop vertices, in order (closed: the last connects back to the
-        /// first). Dense for the oval, sparse corner points for a rectangle. Visuals (the LineRenderer)
-        /// render these directly so they match whatever <see cref="TrackShape"/> built the path.</summary>
+        /// first). Visuals (the LineRenderer) render these directly so they match whatever built the path.</summary>
         public IReadOnlyList<Vector3> PathPoints => m_points;
 
         // ---- build ----------------------------------------------------------
 
-        public void Build(LevelData level)
+        /// <summary>
+        /// Builds the track logic. If a visualTrack is provided, it extracts the exact points. 
+        /// Otherwise, it falls back to generating the path mathematically from the LevelData.
+        /// </summary>
+        public void Build(LevelData level, LineRenderer visualTrack = null)
         {
             m_capacity = Mathf.Max(1, level.runwayCapacity);
             m_arrows = level.arrows != null ? new List<ArrowSetup>(level.arrows) : new List<ArrowSetup>();
 
-            // The loop geometry is generated per-shape (oval / rectangle / square / custom). Everything
-            // below — arc-length tables, Evaluate, ClosestT — is shape-agnostic and works on any closed
-            // polyline, so adding a shape only means adding a point generator in TrackPath.
-            var local = TrackPath.Build(level, Mathf.Max(16, m_segments));
+            // Reset the per-level dynamic registries. The track is a persistent scene object reused
+            // across restarts / next-level, so without this a rebuild inherits the previous attempt's
+            // (now-destroyed) runners, holes and factories as stale entries — inflating Count/Fill,
+            // making CanRelease see a phantom-full runway (lanes won't launch), and misfiring the jam
+            // (lose) check. Clearing here, before factories/holes/runners re-register, fixes restart.
+            m_runners.Clear();
+            m_holes.Clear();
+            m_factories.Clear();
+            m_groups.Clear();
 
-            // Project the shape's local XZ points through this object's full transform, so the level's
-            // trackPlacement (position / rotation / scale) moves, turns and sizes the whole loop. With
-            // an identity transform at the origin this is just the local points unchanged.
-            int n = local.Count;
-            m_points = new Vector3[n];
-            for (int i = 0; i < n; i++)
-                m_points[i] = transform.TransformPoint(new Vector3(local[i].x, 0f, local[i].z));
-
-            m_cumulative = new float[n + 1];
-            float acc = 0f;
-            for (int i = 0; i < n; i++)
+            // OPTION 1: Build from a provided LineRenderer
+            if (visualTrack != null && visualTrack.positionCount >= 2)
             {
-                acc += Vector3.Distance(m_points[i], m_points[(i + 1) % n]);
+                int n = visualTrack.positionCount;
+                m_points = new Vector3[n];
+
+                Vector3[] linePoints = new Vector3[n];
+                visualTrack.GetPositions(linePoints);
+
+                for (int i = 0; i < n; i++)
+                {
+                    Vector3 worldPos = visualTrack.useWorldSpace
+                        ? linePoints[i]
+                        : visualTrack.transform.TransformPoint(linePoints[i]);
+
+                    // Flatten Y so minions don't float
+                    m_points[i] = new Vector3(worldPos.x, transform.position.y, worldPos.z);
+                }
+            }
+            // OPTION 2: Fallback to manual math path generation
+            else
+            {
+                var local = TrackPath.Build(level, Mathf.Max(16, m_segments));
+                int n = local.Count;
+                m_points = new Vector3[n];
+                for (int i = 0; i < n; i++)
+                {
+                    m_points[i] = transform.TransformPoint(new Vector3(local[i].x, 0f, local[i].z));
+                }
+            }
+
+            // Shared Logic: Calculate arc lengths so runners move smoothly
+            int pointCount = m_points.Length;
+            m_cumulative = new float[pointCount + 1];
+            float acc = 0f;
+            for (int i = 0; i < pointCount; i++)
+            {
+                acc += Vector3.Distance(m_points[i], m_points[(i + 1) % pointCount]);
                 m_cumulative[i + 1] = acc;
             }
+
             m_totalLength = acc;
-            m_segCount = n;
+            m_segCount = pointCount;
             m_built = true;
+            OnFillChanged?.Invoke(Fill); // runner list was just cleared → notify HUD the runway is empty
         }
 
         public void RegisterHole(Hole h)
@@ -80,8 +116,6 @@ namespace PeopleFlow
             if (h != null && !m_holes.Contains(h)) m_holes.Add(h);
         }
 
-        /// <summary>Drop a hole from the targetable set — called by a <see cref="HoleFactory"/> when a
-        /// completed hole is retired, so runners stop aiming for it before it animates away.</summary>
         public void UnregisterHole(Hole h)
         {
             if (h != null) m_holes.Remove(h);
@@ -99,9 +133,6 @@ namespace PeopleFlow
 
         // ---- path evaluation ------------------------------------------------
 
-        /// <summary>Normalised track parameter (0..1) of the point on the loop closest to
-        /// <paramref name="worldPos"/>. Used to detect runners by where a hole actually sits, even
-        /// when the hole is offset from the loop (e.g. on a factory conveyor).</summary>
         public float ClosestT(Vector3 worldPos)
         {
             if (!m_built || m_segCount == 0) return 0f;
@@ -155,7 +186,6 @@ namespace PeopleFlow
             return Vector3.Lerp(p0, p1, f);
         }
 
-        /// <summary>Speed multiplier from any arrow zone covering this normalised position.</summary>
         public float SpeedMultiplierAt(float t01)
         {
             t01 = Mathf.Repeat(t01, 1f);
@@ -186,7 +216,6 @@ namespace PeopleFlow
                 OnFillChanged?.Invoke(Fill);
         }
 
-        /// <summary>True if any runner sits within <paramref name="radius"/> of a world point.</summary>
         public bool HasRunnerNear(Vector3 worldPos, float radius)
         {
             float sqr = radius * radius;
@@ -199,26 +228,46 @@ namespace PeopleFlow
             return false;
         }
 
+        /// <summary>Create a crowd block that travels as one rigid formation. The track owns and ticks
+        /// it (see <see cref="Update"/>), so it freezes on pause/win/lose and is dropped on rebuild;
+        /// its members register individually via their own entry, so capacity and jam detection still
+        /// see every runner.</summary>
+        public RunnerGroup CreateGroup(PeopleColor color, float speed, int cols, float colSpacing,
+            float rowArc, float peelStagger, float headStartT)
+        {
+            var g = new RunnerGroup(this, color, speed, cols, colSpacing, rowArc, peelStagger, headStartT);
+            m_groups.Add(g);
+            return g;
+        }
+
         // ---- jam detection (lose authority) --------------------------------
 
         void Update()
         {
-            if (!m_built || GameManager.Instance == null || GameManager.Instance.State != GameState.Playing)
+            if (!m_built || GamePlayController.Instance == null || !GamePlayController.Instance.IsGamePlaying)
                 return;
 
+            // Drive every crowd block as one rigid formation, and prune emptied ones. Done here (not in
+            // each group's own Update) so groups inherit this gated heartbeat: frozen on pause/win/lose.
+            for (int i = m_groups.Count - 1; i >= 0; i--)
+            {
+                m_groups[i].Tick(Time.deltaTime);
+                if (m_groups[i].IsEmpty) m_groups.RemoveAt(i);
+            }
+
+            // Over capacity: the player overfed the runway past its limit — fail the level.
+            if (m_runners.Count > m_capacity)
+            {
+                GamePlayController.Instance.ReportRunwayJam();
+                return;
+            }
+
             if (IsFull && !HasViableMove())
-                GameManager.Instance.ReportRunwayJam();
+                GamePlayController.Instance.ReportRunwayJam();
         }
 
-        /// <summary>
-        /// True if the runway can still drain: a factory is mid-swap (a hole is about to appear),
-        /// someone is mid-jump (a slot is about to free), or some runner has a matching, unlocked,
-        /// not-yet-full hole to aim for.
-        /// </summary>
         bool HasViableMove()
         {
-            // A factory between holes will pop its next hole in within a fraction of a second — don't
-            // call a jam during that gap, or a tight factory level could lose on a false positive.
             for (int i = 0; i < m_factories.Count; i++)
                 if (m_factories[i] != null && m_factories[i].IsProducing) return true;
 
@@ -226,7 +275,7 @@ namespace PeopleFlow
             {
                 var r = m_runners[i];
                 if (r == null) continue;
-                if (r.IsJumping || r.IsEnteringRoad) return true; // mid-motion: a slot is about to free / fill
+                if (r.IsJumping || r.IsEnteringRoad || r.IsPendingPeel) return true; // mid-motion / about to drop in
                 for (int h = 0; h < m_holes.Count; h++)
                 {
                     if (m_holes[h] != null && m_holes[h].CanAccept(r.Color)) return true;
@@ -234,5 +283,20 @@ namespace PeopleFlow
             }
             return false;
         }
+
+#if UNITY_EDITOR
+        void OnDrawGizmos()
+        {
+            if (!m_built || m_points == null || m_points.Length == 0) return;
+
+            Gizmos.color = Color.cyan;
+            for (int i = 0; i < m_points.Length; i++)
+            {
+                Vector3 current = m_points[i];
+                Vector3 next = m_points[(i + 1) % m_points.Length];
+                Gizmos.DrawLine(current, next);
+            }
+        }
+#endif
     }
 }

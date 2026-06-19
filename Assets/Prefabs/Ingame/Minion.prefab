@@ -1337,6 +1337,7 @@ GameObject:
   m_Component:
   - component: {fileID: 866668098654059180}
   - component: {fileID: 2898861756478882216}
+  - component: {fileID: 7645154975117377553}
   m_Layer: 0
   m_Name: Minion
   m_TagString: Untagged
@@ -1383,6 +1384,28 @@ MonoBehaviour:
   JumpHeight: 1.3
   JumpDuration: 0.32
   m_previewSlideSpeed: 6
+--- !u!95 &7645154975117377553
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6112332771091869683}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: e4fa400305e18c04f822db6d57e4244e, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &6384691994195730706
 GameObject:
   m_ObjectHideFlags: 0

@@ -4,10 +4,10 @@ using UnityEngine;
 namespace PeopleFlow
 {
     /// <summary>
-    /// Counts down the level time while the game is Playing (uses scaled time, so pausing the
-    /// game via Time.timeScale also pauses the clock). Reports timeout to <see cref="GameManager"/>.
+    /// Counts down the level time while the game is playing. Reports timeout to
+    /// <see cref="GamePlayController"/>.
     /// </summary>
-    public class Timer : MonoBehaviour
+    public class Timer : Singleton<Timer>
     {
         public float Remaining { get; private set; }
         public float Total { get; private set; }
@@ -28,7 +28,7 @@ namespace PeopleFlow
         void Update()
         {
             if (!m_running) return;
-            if (GameManager.Instance == null || GameManager.Instance.State != GameState.Playing) return;
+            if (GamePlayController.Instance == null || !GamePlayController.Instance.IsGamePlaying) return;
 
             Remaining -= Time.deltaTime;
             if (Remaining <= 0f)
@@ -36,7 +36,7 @@ namespace PeopleFlow
                 Remaining = 0f;
                 m_running = false;
                 OnTick?.Invoke(Remaining, Total);
-                GameManager.Instance.ReportTimeOut();
+                GamePlayController.Instance.ReportTimeOut();
                 return;
             }
             OnTick?.Invoke(Remaining, Total);

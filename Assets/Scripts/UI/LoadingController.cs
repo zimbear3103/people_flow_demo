@@ -47,11 +47,6 @@ public class LoadingController : Singleton<LoadingController>
             {
                 m_tempTimeChange = m_timeChangeBackground;
             }
-
-            if(AssetManager.Instance != null)
-            {
-                m_progressSlider.value = AssetManager.Instance.PercentComplete;
-            }    
         }
         else
         {
@@ -75,12 +70,7 @@ public class LoadingController : Singleton<LoadingController>
 
     IEnumerator OnWaitForLoading()
     {
-        yield return new WaitUntil(() =>
-            AssetManager.Instance != null &&
-            (AssetManager.Instance.AssetStatus == AssetManager.EAssetStatus.Completed ||
-             AssetManager.Instance.AssetStatus == AssetManager.EAssetStatus.Error));
-
-        StartCoroutine(SceneController.Instance.LoadMainMenu((progress) =>
+        yield return StartCoroutine(SceneController.Instance.LoadMainMenu((progress) =>
         {                
         }, () =>
         {

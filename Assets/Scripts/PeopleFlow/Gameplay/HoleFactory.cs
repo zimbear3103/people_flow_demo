@@ -19,6 +19,8 @@ namespace PeopleFlow
     {
         [SerializeField]
         private Transform m_holeHolder;
+        [SerializeField]
+        private Transform m_nextHolePreviewHolder;
         [SerializeField, Tooltip("Seconds the completed hole lingers (so the player sees it fill) before it shrinks away.")]
         float m_retireDelay = 0.18f;
         [SerializeField, Tooltip("Seconds the completed hole takes to shrink to nothing before the next one pops in.")]
@@ -27,11 +29,12 @@ namespace PeopleFlow
         GameObject m_holePrefab;
         MaterialLibrary m_mats;
         RunwayTrack m_track;
-
-        readonly List<HoleSetup> m_bundle = new List<HoleSetup>();
+        
+        [SerializeField] private List<HoleSetup> m_bundle = new List<HoleSetup>();
         float m_trackPosition;
         int m_next;          // index of the next bundle entry to produce
         Hole m_current;      // the live hole, or null while none is being produced
+        Hole m_preview;      // inert preview of the next bundle entry, shown at m_nextHolePreviewHolder
 
         /// <summary>The hole currently presented by this factory, or null while idle/swapping.</summary>
         public Hole Current => m_current;
@@ -42,7 +45,7 @@ namespace PeopleFlow
         /// <summary>True during the brief gap between a hole completing and its replacement popping in
         /// (a hole is still coming). The track uses this so it doesn't mistake the swap for a jam.</summary>
         public bool IsProducing => m_current == null && m_next < m_bundle.Count;
-
+        public List<HoleSetup> Bundle => m_bundle;
         /// <summary>
         /// Configure the factory and produce its first hole. <paramref name="holePrefab"/> is the
         /// prefab every hole in the bundle is instantiated from (the same Hole prefab the level uses).
@@ -73,7 +76,11 @@ namespace PeopleFlow
         void SpawnNext()
         {
             m_current = null;
-            if (m_next >= m_bundle.Count) return; 
+            if (m_next >= m_bundle.Count)
+            {
+                RefreshPreview(); // bundle exhausted — clear any lingering preview
+                return;
+            }
 
             HoleSetup src = m_bundle[m_next++];
             var setup = new HoleSetup
@@ -109,6 +116,53 @@ namespace PeopleFlow
             hole.OnCompleted += HandleHoleCompleted;
             m_track.RegisterHole(hole);
             m_current = hole;
+
+            RefreshPreview(); // show the now-next bundle entry (if any) at the preview slot
+        }
+
+        /// <summary>
+        /// Show an inert preview of the next hole in the bundle (the entry at <see cref="m_next"/>) at
+        /// <see cref="m_nextHolePreviewHolder"/>, replacing any existing preview. Clears the preview
+        /// when no holder is wired or the bundle has no further holes to produce. The preview is purely
+        /// visual: it is never registered with the track and never accepts runners.
+        /// </summary>
+        void RefreshPreview()
+        {
+            if (m_preview != null)
+            {
+                Destroy(m_preview.gameObject);
+                m_preview = null;
+            }
+
+            if (m_nextHolePreviewHolder == null || m_holePrefab == null || m_next >= m_bundle.Count)
+                return;
+
+            HoleSetup src = m_bundle[m_next];
+            var setup = new HoleSetup
+            {
+                color = src.color,
+                requiredCount = src.requiredCount,
+                trackPosition = m_trackPosition,
+                hidden = src.hidden,
+                mechanic = src.mechanic,
+                unlockAfterHolesCompleted = src.unlockAfterHolesCompleted,
+            };
+
+            var go = Instantiate(m_holePrefab, m_nextHolePreviewHolder);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.name = $"HolePreview_{setup.color}";
+
+            var hole = go.GetComponent<Hole>();
+            if (hole == null)
+            {
+                // The missing-Hole-component case is already reported when the live hole is produced.
+                Destroy(go);
+                return;
+            }
+
+            hole.SetupPreview(setup, m_mats);
+            m_preview = hole;
         }
 
         void HandleHoleCompleted(Hole hole)

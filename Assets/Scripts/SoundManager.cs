@@ -20,18 +20,7 @@ public enum ESoundId
     UI_Click_ButtonMain,
     UI_Click_ButtonNegative,
     UI_Click_Other,
-    Ingame_BulletImpact,
-    Ingame_CapyRun,
-    Ingame_CrateCollision,
-    Ingame_CrateExplode,
-    Ingame_EnemyAttack,
-    Ingame_EnemySplash,
-    Ingame_GeneralBooster,
-    Ingame_GunShot,
-    Ingame_Overload,
-    Voice_CapyFear,
-    Voice_CapyHit,
-    Voice_CapyWin
+    Ingame_Run,
 }
 
 public class SoundManager : Singleton<SoundManager>
@@ -47,7 +36,6 @@ public class SoundManager : Singleton<SoundManager>
     [SerializeField] Sound[] m_voiceSounds;
 
     private bool m_isPauseSound = false;
-    private bool m_isPauseVoice = false;
 
     private IEnumerator Start()
     {
@@ -190,30 +178,4 @@ public class SoundManager : Singleton<SoundManager>
         }
     }
     #endregion //Music
-
-    #region Voice
-    public Sound GetSoundVoiceAudioClip(ESoundId soundId)
-    {
-        string name = soundId.ToString();
-        return m_voiceSounds.FirstOrDefault(clip => clip.Name == name);
-    }
-
-    public void OnPlayVoiceAudio(ESoundId soundId)
-    {
-        OnPlayVoiceAudio(GetSoundVoiceAudioClip(soundId));
-    }
-
-    public void OnPlayVoiceAudio(Sound soundData)
-    {
-        OnPlayVoiceAudio(soundData.Clip);
-    }
-
-    public void OnPlayVoiceAudio(AudioClip soundData)
-    {
-        if (m_voiceSource.isPlaying)
-            m_voiceSource.Stop();
-
-        m_voiceSource.PlayOneShot(soundData);
-    }
-    #endregion //Voice
 }

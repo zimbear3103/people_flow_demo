@@ -26,7 +26,6 @@ public class UILevelComplete : UIPopup
     {
         base.Show();
         SoundManager.Instance.OnPlayMusic(ESoundId.Bg_Victory, isLoop: false, volume: 1f);
-        SoundManager.Instance.OnPlayVoiceAudio(ESoundId.Voice_CapyWin);
     }
 
     private void OnLeftButtonPressed()
@@ -39,6 +38,21 @@ public class UILevelComplete : UIPopup
 
     private void OnRightButtonPressed()
     {
+        OnPlayCoinAnimation(false);
+
+        if (GamePlayController.Instance.HasNextLevel)
+        {
+            UserProfile.Instance.Level += 1;
+            UserProfile.Instance.SaveGameData();
+            GamePlayController.Instance.StartLevel();
+        }
+        else
+        {
+            UserProfile.Instance.SaveGameData();
+            GamePlayController.Instance.RestartLevel();
+        }
+
+        Hide();
     }
 
     public void SetCoinLeftText(int coin)

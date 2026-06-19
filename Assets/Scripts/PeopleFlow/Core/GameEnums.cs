@@ -1,6 +1,7 @@
 namespace PeopleFlow
 {
-    /// <summary>High-level game flow states owned by <see cref="GameManager"/>.</summary>
+    /// <summary>Legacy high-level game flow states. The referee is now <see cref="GamePlayController"/>;
+    /// gameplay gates on <c>GamePlayController.IsGamePlaying</c> and this enum is no longer read.</summary>
     public enum GameState
     {
         Boot,

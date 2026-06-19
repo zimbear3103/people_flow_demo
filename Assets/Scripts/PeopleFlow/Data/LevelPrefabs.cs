@@ -6,7 +6,7 @@ namespace PeopleFlow
     /// <summary>
     /// The drag-and-drop prefab set a level is built from. Assign these in the inspector (on the
     /// <see cref="LevelManager"/> itself, or on the entry component that forwards them —
-    /// <see cref="GameBootstrap"/> / <see cref="PeopleFlowGameController"/>) and the level is
+    /// <see cref="GameBootstrap"/> / <see cref="GamePlayController"/>) and the level is
     /// assembled by instantiating them, instead of building primitives in code.
     ///
     /// One prefab per role: the same Hole / Factory / Lane prefab is reused for every hole / factory /

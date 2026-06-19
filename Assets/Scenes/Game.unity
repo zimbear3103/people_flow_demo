@@ -148,15 +148,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4bb718e3b99a1104cb7034dcfe7545be, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_overrideLevel: {fileID: 11400000, guid: 5b6295a1b246a3f4983e9b606b37ce52, type: 2}
+  m_overrideLevel: {fileID: 0}
   m_forceLevelIndex: 1
   m_prefabs:
-    holes:
-    - {fileID: 427290739188131959, guid: f24f265b7d4f61e419638681e2156f9e, type: 3}
-    factories:
-    - {fileID: 5314171148500299435, guid: ead01c84983c0a143ba522d8eebed10e, type: 3}
-    lane:
-    - {fileID: 7257438482777356449, guid: 8c5c909f9d63a76408eaf31fad41c3e3, type: 3}
+    hole: {fileID: 427290739188131959, guid: f24f265b7d4f61e419638681e2156f9e, type: 3}
+    factorie: {fileID: 5314171148500299435, guid: ead01c84983c0a143ba522d8eebed10e, type: 3}
+    lane: {fileID: 7257438482777356449, guid: 8c5c909f9d63a76408eaf31fad41c3e3, type: 3}
     character: {fileID: 6112332771091869683, guid: a756f83082ad50e4b967bf29d87fc99e, type: 3}
     road: {fileID: 2008629451815515396, guid: 3814f24dccdf75a4bb8791ea2ccedc1b, type: 3}
   m_colorMaterials:

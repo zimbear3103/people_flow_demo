@@ -1,3 +1,4 @@
+using System;
 using PeopleFlow;
 using UnityEngine;
 
@@ -12,8 +13,8 @@ public class GamePlayController : Singleton<GamePlayController>
         Pause,
         Revive,
         StartLevel,
-        PlayerDead,
-        BossDead,
+        Win,
+        Lose,
         EndLevel,
         QuitLevel
     }
@@ -28,7 +29,9 @@ public class GamePlayController : Singleton<GamePlayController>
     }
 
     [SerializeField] bool m_isLevelDesign = false;
-    [SerializeField] bool m_usePeopleFlowPrototype = true;
+    [Header("PeopleFlow level")]
+    [Tooltip("Authored LevelData assets (e.g. baked by ExportLevelData). OnSetupGameLevel picks one by level index.")]
+    [SerializeField] LevelData[] m_levels;
     [Header("Game State")]
     [SerializeField, ReadOnly] GameStateType m_gameState = GameStateType.None;
     [SerializeField, ReadOnly] GameStateType m_nextGameState = GameStateType.None;
@@ -36,10 +39,11 @@ public class GamePlayController : Singleton<GamePlayController>
 
     private GameStateType m_saveGameState = GameStateType.None;
     private int m_currentScore;
-    private int m_currentLevel;
+    //private int m_currentLevel;
 
     private bool m_isPaused;
     private bool m_levelResult;
+    private bool m_resultShown;
 
     private int m_countEnterStartLevel = 1;
     private int m_countLevelRevive = 0;
@@ -59,14 +63,27 @@ public class GamePlayController : Singleton<GamePlayController>
     public bool IsTutorial { set; get; } = false;
     public int CountLevelRevive => m_countLevelRevive;
 
+    /// <summary>Number of authored levels available to play.</summary>
+    public int LevelCount => m_levels != null ? m_levels.Length : 0;
+    /// <summary>True if there is another level after the player's current one.</summary>
+    public bool HasNextLevel => (UserProfile.Instance.Level + 1) < LevelCount;
+
+    LevelData m_currentLevel;
+
+    public int TotalHoles { get; private set; }
+    public int CompletedHoles { get; private set; }
+    public LoseReason LastLoseReason { get; private set; }
+    public event Action<int, int> OnHoleProgress;
+    public event Action OnLevelWin;
+    public event Action<LoseReason> OnLevelLose;
+
+    public bool IsPlaying => IsGamePlaying;
+
+    public void ConfigureAsStandalone() => m_isLevelDesign = true;
+
     private void Start()
     {
         IsInitialized = true;
-
-        // People Flow prototype bridge: the module reports win/lose through
-        // static events so it stays decoupled from this state machine.
-        PeopleFlowGameController.LevelFailed += OnPeopleFlowLevelFailed;
-        PeopleFlowGameController.LevelCompleted += OnPeopleFlowLevelCompleted;
 
         if (!m_isLevelDesign)
         {
@@ -80,16 +97,12 @@ public class GamePlayController : Singleton<GamePlayController>
                 () =>
                 {
                     GameLog.Log(LogType.Log, $"win game");
-
-                    if (PeopleFlowGameController.Instance != null)
-                        PeopleFlowGameController.Instance.DebugWinLevel();
+                    ForceWin();
                 },
                 () =>
                 {
                     GameLog.Log(LogType.Log, $"lose game");
-
-                    if (PeopleFlowGameController.Instance != null)
-                        PeopleFlowGameController.Instance.DebugFailLevel();
+                    ForceLose();
                 }
             );
 #endif// USE_CHEAT
@@ -98,11 +111,25 @@ public class GamePlayController : Singleton<GamePlayController>
 
     public void OnSetupGameLevel(int level)
     {
-        if (m_usePeopleFlowPrototype)
+        TeardownPeopleFlow();
+
+        if (m_levels == null || m_levels.Length == 0)
         {
-            PeopleFlowGameController.EnsureInstance().BeginLevel(level);
+            GameLog.Log(LogType.Error, "[GamePlayController] No LevelData assigned in 'm_levels' — cannot set up a PeopleFlow level.");
             return;
         }
+        m_currentLevel = m_levels[Mathf.Clamp(level, 0, m_levels.Length - 1)];
+        if (m_currentLevel == null)
+        {
+            GameLog.Log(LogType.Error, $"[GamePlayController] LevelData at index {level} is null — cannot set up the level.");
+            return;
+        }
+
+
+        var input = InputManager.Instance.GetComponent<InputManager>();
+        var timer = Timer.Instance.GetComponent<Timer>();
+
+        LevelManager.Instance.Build(m_currentLevel, input, timer);
     }
 
     private void OnExitInGameState()
@@ -217,7 +244,7 @@ public class GamePlayController : Singleton<GamePlayController>
                 }
                 break;
 
-            case GameStateType.PlayerDead:
+            case GameStateType.Lose:
                 {
                     switch (m_controlStatus)
                     {
@@ -225,17 +252,17 @@ public class GamePlayController : Singleton<GamePlayController>
                             {
                                 GameLog.Log(LogType.Log, $"-----Ingame------Enter state-----------:{m_gameState}");
                                 SetGameControlStatus(ControlStatusType.Update);
+                                // Show the fail popup immediately. Waiting first would leave the game
+                                // frozen (IsGamePlaying is already false) with no popup and dead input
+                                // for the delay — which reads as "stuck input". Popup buttons drive next.
+                                if (!m_resultShown)
+                                {
+                                    m_resultShown = true;
+                                    UIManager.Instance.ShowPopup(PopupType.LevelFail);
+                                }
                             }
                             break;
                         case ControlStatusType.Update:
-                            {
-                                m_WaitingTimer += Time.deltaTime;
-
-                                if (m_WaitingTimer >= m_playerDeadWaitingTime)
-                                {
-                                    EndLevel();
-                                }
-                            }
                             break;
                         case ControlStatusType.Exit:
                             {
@@ -246,7 +273,7 @@ public class GamePlayController : Singleton<GamePlayController>
                 }
                 break;
 
-            case GameStateType.BossDead:
+            case GameStateType.Win:
                 {
                     switch (m_controlStatus)
                     {
@@ -254,17 +281,16 @@ public class GamePlayController : Singleton<GamePlayController>
                             {
                                 GameLog.Log(LogType.Log, $"-----Ingame------Enter state-----------:{m_gameState}");
                                 SetGameControlStatus(ControlStatusType.Update);
+                                // Show the win popup immediately (see Lose state) — no frozen, input-dead
+                                // delay before it appears. Popup buttons drive what happens next.
+                                if (!m_resultShown)
+                                {
+                                    m_resultShown = true;
+                                    UIManager.Instance.ShowPopup(PopupType.LevelComplete);
+                                }
                             }
                             break;
                         case ControlStatusType.Update:
-                            {
-                                m_WaitingTimer += Time.deltaTime;
-
-                                if (m_WaitingTimer >= m_bossDeadWaitingTime)
-                                {
-                                    EndLevel();
-                                }
-                            }
                             break;
                         case ControlStatusType.Exit:
                             {
@@ -398,12 +424,12 @@ public class GamePlayController : Singleton<GamePlayController>
         SetGameControlStatus(ControlStatusType.Exit, GameStateType.EndLevel);
     }
 
-    public void PlayerDead(float waitTime)
+    public void PlayerLose(float waitTime)
     {
         m_playerDeadWaitingTime = waitTime;
         m_WaitingTimer = 0.0f;
         IsGamePlaying = false;
-        SetGameControlStatus(ControlStatusType.Exit, GameStateType.PlayerDead);
+        SetGameControlStatus(ControlStatusType.Exit, GameStateType.Lose);
     }
 
     public void StartLevel()
@@ -434,9 +460,6 @@ public class GamePlayController : Singleton<GamePlayController>
         m_saveGameState = m_gameState;
         IsGamePlaying = false;
 
-        if (m_usePeopleFlowPrototype && PeopleFlowGameController.Instance != null)
-            PeopleFlowGameController.Instance.PauseGame();
-
         SetGameControlStatus(ControlStatusType.Exit, GameStateType.SettingIngame);
     }
 
@@ -453,9 +476,6 @@ public class GamePlayController : Singleton<GamePlayController>
         {
             SetGameControlStatus(ControlStatusType.Exit, m_saveGameState);
             IsGamePlaying = SaveIsGamePlaying;
-
-            if (m_usePeopleFlowPrototype && PeopleFlowGameController.Instance != null)
-                PeopleFlowGameController.Instance.ResumeGame();
         }
     }
 
@@ -493,9 +513,7 @@ public class GamePlayController : Singleton<GamePlayController>
 
     public void OnFreeData()
     {
-        if (m_usePeopleFlowPrototype && PeopleFlowGameController.Instance != null)
-            PeopleFlowGameController.Instance.QuitLevel();
-
+        TeardownPeopleFlow();
         if (IsTutorial)
         {
             IsTutorial = false;
@@ -503,57 +521,65 @@ public class GamePlayController : Singleton<GamePlayController>
         }
     }
 
+    public void BeginLevel(int totalHoles)
+    {
+        TotalHoles = totalHoles;
+        CompletedHoles = 0;
+        LastLoseReason = LoseReason.None;
+        m_resultShown = false;
+        m_WaitingTimer = 0.0f;
+        Time.timeScale = 1f;
+        IsGamePlaying = true;
+        OnHoleProgress?.Invoke(CompletedHoles, TotalHoles);
+    }
+
+    public void ReportHoleCompleted(Hole hole)
+    {
+        if (!IsGamePlaying) return;
+        CompletedHoles++;
+        OnHoleProgress?.Invoke(CompletedHoles, TotalHoles);
+        if (CompletedHoles >= TotalHoles) WinPeopleFlow();
+    }
+
+    public void ReportRunwayJam() { if (IsGamePlaying) LosePeopleFlow(LoseReason.RunwayFull); }
+    public void ReportTimeOut() { if (IsGamePlaying) LosePeopleFlow(LoseReason.TimeOut); }
+
+    public void ForceWin() { if (IsGamePlaying) WinPeopleFlow(); }
+    public void ForceLose() { if (IsGamePlaying) LosePeopleFlow(LoseReason.RunwayFull); }
+
+    void WinPeopleFlow()
+    {
+        IsGamePlaying = false;
+        OnLevelWin?.Invoke();
+        PlayerWin(m_bossDeadWaitingTime);
+    }
+
+    void LosePeopleFlow(LoseReason reason)
+    {
+        LastLoseReason = reason;
+        IsGamePlaying = false;
+        OnLevelLose?.Invoke(reason);
+        PlayerLose(m_playerDeadWaitingTime);
+    }
+
+    public void PlayerWin(float waitTime)
+    {
+        m_bossDeadWaitingTime = waitTime;
+        m_WaitingTimer = 0.0f;
+        IsGamePlaying = false;
+        SetGameControlStatus(ControlStatusType.Exit, GameStateType.Win);
+    }
+
+    void TeardownPeopleFlow()
+    {
+        Time.timeScale = 1f;
+        m_isPaused = false;
+        LevelManager.Instance.Clear();
+    }
+
     public UIInGame OnGetUIIngame()
     {
         var uiIngame = (UIInGame)UIManager.Instance.GetUIScreen(ScreenType.Gameplay);
         return uiIngame;
     }
-
-    #region PeopleFlow Prototype Bridge
-    protected override void OnDestroy()
-    {
-        base.OnDestroy();
-        PeopleFlowGameController.LevelFailed -= OnPeopleFlowLevelFailed;
-        PeopleFlowGameController.LevelCompleted -= OnPeopleFlowLevelCompleted;
-    }
-
-    private void OnPeopleFlowLevelFailed()
-    {
-        // Short beat so the death particles read before the popup covers them,
-        // reusing the existing PlayerDead -> EndLevel state flow.
-        const float failPopupDelay = 1.5f;
-
-        PlayerDead(failPopupDelay);
-        StartCoroutine(Tweener.IE_DelayForAction(failPopupDelay, () =>
-        {
-            UIManager.Instance.ShowPopup(PopupType.LevelFail);
-        }));
-    }
-
-    private void OnPeopleFlowLevelCompleted(int survivors)
-    {
-        // Reward scales with the surviving crowd, mirroring the genre standard.
-        int coinReward = Mathf.Max(1, survivors) * 2;
-        UserProfile.Instance.Coin += coinReward;
-
-        if (UserProfile.Instance.Level + 1 < PeopleFlowSampleLevels.Count)
-        {
-            UserProfile.Instance.Level += 1;
-        }
-        UserProfile.Instance.SaveGameData();
-
-        var levelCompletePopup = FindAnyObjectByType<UILevelComplete>(FindObjectsInactive.Include);
-        if (levelCompletePopup != null)
-        {
-            levelCompletePopup.SetCoinLeftText(coinReward);
-            levelCompletePopup.SetCoinRightText(coinReward * 2);
-        }
-
-        EndLevel();
-        StartCoroutine(Tweener.IE_DelayForAction(1.2f, () =>
-        {
-            UIManager.Instance.ShowPopup(PopupType.LevelComplete);
-        }));
-    }
-    #endregion
 }

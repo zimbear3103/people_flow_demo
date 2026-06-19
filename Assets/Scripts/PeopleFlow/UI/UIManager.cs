@@ -48,11 +48,11 @@ namespace PeopleFlow
             m_timer = timer;
             m_track = track;
 
-            if (GameManager.Instance != null)
+            if (GamePlayController.Instance != null)
             {
-                GameManager.Instance.OnHoleProgress += OnHoleProgress;
-                GameManager.Instance.OnLevelWin += OnWin;
-                GameManager.Instance.OnLevelLose += OnLose;
+                GamePlayController.Instance.OnHoleProgress += OnHoleProgress;
+                GamePlayController.Instance.OnLevelWin += OnWin;
+                GamePlayController.Instance.OnLevelLose += OnLose;
             }
             if (m_timer != null) m_timer.OnTick += OnTick;
             if (m_track != null) m_track.OnFillChanged += OnFill;
@@ -68,11 +68,11 @@ namespace PeopleFlow
 
         void Unsubscribe()
         {
-            if (GameManager.Instance != null)
+            if (GamePlayController.Instance != null)
             {
-                GameManager.Instance.OnHoleProgress -= OnHoleProgress;
-                GameManager.Instance.OnLevelWin -= OnWin;
-                GameManager.Instance.OnLevelLose -= OnLose;
+                GamePlayController.Instance.OnHoleProgress -= OnHoleProgress;
+                GamePlayController.Instance.OnLevelWin -= OnWin;
+                GamePlayController.Instance.OnLevelLose -= OnLose;
             }
             if (m_timer != null) m_timer.OnTick -= OnTick;
             if (m_track != null) m_track.OnFillChanged -= OnFill;
@@ -118,7 +118,7 @@ namespace PeopleFlow
         void OnPause()
         {
             AudioManager.Instance?.PlayClick();
-            GameManager.Instance.Pause();
+            GamePlayController.Instance?.OnPause();
             m_pausePanel.SetActive(true);
         }
 
@@ -126,7 +126,7 @@ namespace PeopleFlow
         {
             AudioManager.Instance?.PlayClick();
             m_pausePanel.SetActive(false);
-            GameManager.Instance.Resume();
+            GamePlayController.Instance?.OnResume();
         }
 
         // ---- UI construction ------------------------------------------------
@@ -174,21 +174,21 @@ namespace PeopleFlow
             m_pausePanel = MakePopup(root, "PausePanel", "PAUSED", out _);
             AddPopupButton(m_pausePanel.transform, "Resume", new Color(0.4f, 0.8f, 0.5f), -10f, OnResume);
             AddPopupButton(m_pausePanel.transform, "Restart", new Color(0.95f, 0.7f, 0.3f), -110f,
-                () => { AudioManager.Instance?.PlayClick(); GameManager.Instance.Restart(); });
+                () => { AudioManager.Instance?.PlayClick(); GameSession.Restart(); });
             AddPopupButton(m_pausePanel.transform, "Menu", new Color(0.5f, 0.6f, 0.95f), -210f,
-                () => { AudioManager.Instance?.PlayClick(); GameManager.Instance.GoToMenu(); });
+                () => { AudioManager.Instance?.PlayClick(); GameSession.GoToMenu(); });
 
             m_winPanel = MakePopup(root, "WinPanel", "LEVEL COMPLETE!", out _);
             AddPopupButton(m_winPanel.transform, "Next", new Color(0.4f, 0.8f, 0.5f), -20f,
-                () => { AudioManager.Instance?.PlayClick(); GameManager.Instance.GoToNextLevel(); });
+                () => { AudioManager.Instance?.PlayClick(); GameSession.GoToNextLevel(); });
             AddPopupButton(m_winPanel.transform, "Menu", new Color(0.5f, 0.6f, 0.95f), -120f,
-                () => { AudioManager.Instance?.PlayClick(); GameManager.Instance.GoToMenu(); });
+                () => { AudioManager.Instance?.PlayClick(); GameSession.GoToMenu(); });
 
             m_losePanel = MakePopup(root, "LosePanel", "LEVEL FAILED", out m_loseReasonText);
             AddPopupButton(m_losePanel.transform, "Retry", new Color(0.95f, 0.7f, 0.3f), -20f,
-                () => { AudioManager.Instance?.PlayClick(); GameManager.Instance.Restart(); });
+                () => { AudioManager.Instance?.PlayClick(); GameSession.Restart(); });
             AddPopupButton(m_losePanel.transform, "Menu", new Color(0.5f, 0.6f, 0.95f), -120f,
-                () => { AudioManager.Instance?.PlayClick(); GameManager.Instance.GoToMenu(); });
+                () => { AudioManager.Instance?.PlayClick(); GameSession.GoToMenu(); });
 
             m_pausePanel.SetActive(false);
             m_winPanel.SetActive(false);

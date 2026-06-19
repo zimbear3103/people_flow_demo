@@ -47,8 +47,13 @@ namespace PeopleFlow
         [Tooltip("Max minions per released group. The waiting line forms single-colour groups of at " +
                  "most this many; a tap/hold releases one such group.")]
         public int groupSize = 3;
-
-        [Header("Barrier (section 7)")]
+        [SerializeField] float m_releaseInterval = 0.22f;
+        [SerializeField] float m_memberSpacing = 0.2f;
+        [SerializeField] float m_groupSpacing = 0.9f;
+        [SerializeField] float m_memberLaunchStagger = 0.08f;
+        [SerializeField] bool m_releaseRightToLeft = false;
+        [SerializeField] float m_previewStandOffset = 0f;
+        [Header("Barrier")]
         [Tooltip("If true the lane is blocked until 'unlockAfterHolesCompleted' holes are done.")]
         public bool barrier;
         public int unlockAfterHolesCompleted;
@@ -57,6 +62,7 @@ namespace PeopleFlow
         [Tooltip("Where this lane's pad sits. Override it to pin the lane, or leave it off to let the " +
                  "build space the lanes automatically along the bottom edge.")]
         public TransformSpec placement = new TransformSpec();
+
     }
 
     /// <summary>One hole placed around the loop at a normalised track position.</summary>
@@ -165,7 +171,7 @@ namespace PeopleFlow
                  "(its centre, orientation and size); leave it off to centre the loop on the origin. " +
                  "The shape above is generated relative to this transform.")]
         public TransformSpec trackPlacement = new TransformSpec();
-
+        public GameObject trackLinePrefab;
         [Header("Content")]
         public List<LaneSetup> lanes = new List<LaneSetup>();
         [Tooltip("Standalone holes. Holes only ever spawn at factories, so at build each one is wrapped " +

@@ -51,7 +51,7 @@ public class UIHome : UIScreen
     public override void Show()
     {
         base.Show();
-        m_maxLevel = PeopleFlow.PeopleFlowSampleLevels.Count;
+        m_maxLevel = PeopleFlow.DefaultLevels.Count;
         SetLevelUI();
         OnSetLevel(UserProfile.Instance.Level);
         OnSetCoins(UserProfile.Instance.Coin);
