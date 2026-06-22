@@ -8,12 +8,6 @@ namespace PeopleFlow
     public class RunwayTrack : MonoBehaviour
     {
         [SerializeField] int m_segments = 128;
-        [Tooltip("World units one minion occupies along the loop, used to AUTO-calculate capacity " +
-                 "(capacity = loopLength / this) when the level's autoRunwayCapacity is on. Smaller = a " +
-                 "tighter pack / higher capacity. Minions run in RANKS (several abreast) packed " +
-                 "nose-to-tail, so set this to roughly one rank's loop footprint so a 'full' runway " +
-                 "lines up with the loop actually looking packed.")]
-        [SerializeField] float m_minionArcFootprint = 0.4f;
 
         [Tooltip("Optional authored runway path. When set (here, or passed to Build by the LevelManager), " +
                  "the loop is SAMPLED from this Unity Spline instead of the generated math shape. Leave " +
@@ -90,16 +84,39 @@ namespace PeopleFlow
             m_totalLength = acc;
             m_segCount = pointCount;
 
-            // Capacity = how many minions physically fit around the loop. When the level opts into
-            // auto-capacity we derive it from the loop length (length / per-minion footprint), so a
-            // bigger runway holds more before it's "full"; otherwise we use the hand-authored number.
-            // Overfilling past this loses the level (see the over-capacity check in Update).
-            m_capacity = level.autoRunwayCapacity && m_minionArcFootprint > 0.0001f
-                ? Mathf.Max(1, Mathf.FloorToInt(m_totalLength / m_minionArcFootprint))
-                : Mathf.Max(1, level.runwayCapacity);
+            // Capacity = how many bodies fit when the loop is packed the way it is actually run:
+            // groups run COLS-abreast as single ranks, packed nose-to-tail at the group spacing
+            // (RunnerGroup keeps a 2*rowArc gap; rowArc = Lane.MinEntrySpacing / length). So the loop
+            // holds floor(length / rankSpacing) ranks, each up to `cols` bodies wide. Deriving capacity
+            // from that geometry (instead of a per-body single-file footprint) is what makes a "full"
+            // bar line up with the loop visually looking packed — bodies occupy RANKS, not single-file
+            // slots. Pushing onto a full runway is BLOCKED (see Lane.CanRelease); you only lose on a
+            // true deadlock (see Update), never by overflowing.
+            if (level.autoRunwayCapacity)
+            {
+                int cols = WidestGroup(level);
+                float rankSpacing = 2f * Lane.MinEntrySpacing;   // matches RunnerGroup's safe gap + Lane's entry gap
+                int rankSlots = Mathf.Max(1, Mathf.FloorToInt(m_totalLength / Mathf.Max(0.01f, rankSpacing)));
+                m_capacity = Mathf.Max(1, rankSlots * cols);
+            }
+            else
+            {
+                m_capacity = Mathf.Max(1, level.runwayCapacity);
+            }
 
             m_built = true;
             OnFillChanged?.Invoke(Fill); // runner list was just cleared → notify HUD the runway is empty
+        }
+
+        // The widest group any lane can release; one packed rank is this many bodies. Capacity is
+        // counted in bodies, so the rank-slot count is scaled by a full rank's body-count.
+        static int WidestGroup(LevelData level)
+        {
+            int cols = 1;
+            if (level != null && level.lanes != null)
+                for (int i = 0; i < level.lanes.Count; i++)
+                    if (level.lanes[i] != null) cols = Mathf.Max(cols, Mathf.Max(1, level.lanes[i].groupSize));
+            return cols;
         }
 
         bool TryBuildFromSpline(SplineContainer container)
@@ -263,18 +280,13 @@ namespace PeopleFlow
                 if (m_groups[i].IsEmpty) m_groups.RemoveAt(i);
             }
 
-            // Overfill = instant fail: the player held a lane and pushed the runway past its capacity
-            // (auto-derived from the loop length, see Build). Full is the brink; one more body over the
-            // top loses immediately. Caught here every frame, so it fires the instant a release tips it
-            // over.
-            if (m_runners.Count > m_capacity)
-            {
-                GamePlayController.Instance.ReportRunwayJam();
-                return;
-            }
-
-            // Backstop against a soft-lock: the runway sits exactly full and nothing on it can complete
-            // any open hole (and nothing is in motion / being produced) — it can never drain, so fail.
+            // PASSIVE deadlock fail (backstop): the runway is full AND nothing on it can ever drain it
+            // (no runner matches an open, unlocked, not-yet-full hole, and nothing is mid-hop or being
+            // produced). A full-but-draining runway is NOT a loss — the group ring always creeps
+            // forward (the lead group has slack ahead), so any matching open hole stays reachable and
+            // HasViableMove sees it. The ACTIVE overfill fail — pushing a group onto a runway that
+            // can't fit it — lives in Lane.Update (WouldOverflowRunway); this catches a runway left
+            // jammed full with a colour it can't use while no lane is pushing.
             if (IsFull && !HasViableMove())
                 GamePlayController.Instance.ReportRunwayJam();
         }

@@ -333,6 +333,8 @@ namespace PeopleFlow
 
         private void onDie()
         {
+            if (!m_animator) return;
+
             if (!IsPreview)
             m_animator.SetBool("isDie", true);
         }

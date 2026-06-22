@@ -97,6 +97,15 @@ namespace PeopleFlow
             HoleFactorySetup templateFactory = TemplateFactory(index);
             var bundleHoles = factory.Bundle;
             setup.bundle = bundleHoles != null ? new List<HoleSetup>(bundleHoles) : new List<HoleSetup>();
+
+            // Factory-level specials (the ice lock) aren't authored on the live component — carry them
+            // over from the matching template factory, the same way lanes copy their barrier settings.
+            if (templateFactory != null)
+            {
+                setup.iceFactory = templateFactory.iceFactory;
+                setup.iceUnlockAfterHolesCompleted = templateFactory.iceUnlockAfterHolesCompleted;
+            }
+
             if (setup.bundle.Count == 0)
                 Debug.LogWarning($"[ExportLevelData] Factory '{factory.name}' has no Hole children — it " +
                                  "will export an empty bundle and won't produce anything. Add a Hole under it.");

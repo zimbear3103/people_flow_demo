@@ -92,6 +92,18 @@ namespace PeopleFlow
                  "is ignored — the factory position above is used.)")]
         public List<HoleSetup> bundle = new List<HoleSetup>();
 
+        [Header("Ice (locked factory)")]
+        [Tooltip("When ON the whole factory starts encased in ice: its holes stay hidden and are NOT " +
+                 "produced (you can't see what's inside) until 'iceUnlockAfterHolesCompleted' OTHER holes " +
+                 "are completed. Then the ice melts off and the factory begins producing its bundle.")]
+        public bool iceFactory;
+
+        [Min(0)]
+        [Tooltip("Ice factory only: number of OTHER holes that must complete before the ice melts. The " +
+                 "factory's own bundle holes don't count (they aren't produced while iced), so keep this " +
+                 "below the number of holes reachable elsewhere. 0 = not iced.")]
+        public int iceUnlockAfterHolesCompleted;
+
         [Header("Placement")]
         [Tooltip("Where the factory structure sits. Override it to pin the factory at an exact " +
                  "transform; leave it off to push it just outside the loop at 'trackPosition'. Each " +

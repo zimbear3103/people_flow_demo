@@ -48,9 +48,11 @@ Timer hits 0  ─────▶ GamePlayController.ReportTimeOut()       ─┘
 Gameplay gates on GamePlayController.IsGamePlaying; UIManager & AudioManager SUBSCRIBE to its events.
 ```
 
-**Why it can't be cheesed:** pushing is blocked when the runway is at capacity, and you only lose
-by *RunwayFull* on a genuine **deadlock** (runway full **and** no runner has any matching, unlocked,
-not-yet-full hole left). A momentarily full bar that can still drain is not a loss.
+**Why it can't be cheesed:** you lose by *RunwayFull* two ways — **overfill** (holding a lane to push
+a group onto a runway that's already full) or a genuine **deadlock** (runway full **and** no runner has
+any matching, unlocked, not-yet-full hole left, with no lane pushing). A momentarily full bar that can
+still drain — and isn't being pushed — is not a loss. Capacity is rank-aware (loop length ÷ rank
+spacing × group width), so a "full" bar matches the loop actually looking packed.
 
 **Why fills never race:** each incoming runner **reserves** a hole slot (`TryReserve`) before it
 hops in, so two runners can never both claim the last slot of a 3/3 hole.
@@ -175,7 +177,7 @@ levelNumber, timeLimit, runwayCapacity, runSpeed, loopWidth, loopHeight,
 trackPlacement : TransformSpec  // pin / rotate / scale the whole loop (off = centred on origin)
 lanes  : List<LaneSetup>  { characters[] (optional — auto-filled from holes when empty), groupSize, barrier, unlockAfterHolesCompleted, placement }
 holes  : List<HoleSetup>  { color, requiredCount, trackPosition(0..1), hidden, mechanic, unlockAfterHolesCompleted, placement }
-holeFactories : List<HoleFactorySetup> { trackPosition(0..1), bundle: List<HoleSetup>, placement }  // one position, holes produced one at a time
+holeFactories : List<HoleFactorySetup> { trackPosition(0..1), bundle: List<HoleSetup>, iceFactory, iceUnlockAfterHolesCompleted, placement }  // one position, holes produced one at a time
 arrows : List<ArrowSetup> { trackPosition, length, speedMultiplier }
 ```
 
@@ -236,9 +238,11 @@ the menu picked).
 
 - **Tap & hold** a lane pad → pushes the front character of that lane onto the runway. **Keep
   holding** to push more (one every `releaseInterval` ≈ 0.22s). Release to stop.
-- Pushing is **blocked** while the runway is full or a runner is still sitting on the entry.
+- Pushing onto a **full** runway **fails the level** (overfill) — release before it tops out. Pushing
+  is briefly paced while a runner is still sitting on the entry.
 - A running character automatically **dives into the first matching, open, unlocked hole** it passes.
-- **Win:** all holes filled. **Lose:** runway deadlocks (full, nobody can move) or the clock hits 0.
+- **Win:** all holes filled. **Lose:** runway **overfills** (push more while full), **deadlocks**
+  (full, nobody can drain), or the clock hits 0.
 - Mouse = the pointer on PC; touch = the pointer on device (same code path).
 
 ---
@@ -285,9 +289,18 @@ All are data-driven via `LevelData`, so you enable them per level with no code c
 | **Lane barrier** | ✅ | `Lane` | `LaneSetup.barrier = true`, `unlockAfterHolesCompleted = N` |
 | **Arrow / speed zone** | ✅ (bonus) | `RunwayTrack`, `People` | add an `ArrowSetup { trackPosition, length, speedMultiplier }` |
 | **Hole factory (bundle)** | ✅ | `HoleFactory`, `Hole` | add a `HoleFactorySetup { trackPosition, bundle: List<HoleSetup> }` to `LevelData.holeFactories` |
+| **Ice factory (locked)** | ✅ | `HoleFactory` (+ `GamePlayController.OnHoleProgress`) | `HoleFactorySetup.iceFactory = true`, `iceUnlockAfterHolesCompleted = N` (whole factory is iced over — holes hidden & unproduced — until N *other* holes are done; then the ice melts and it starts producing) |
 
 The "locked" mechanics share one signal — `GamePlayController.OnHoleProgress(completed, total)` — so a
-hole or lane unlocks the moment enough *other* holes are finished.
+hole, lane or factory unlocks the moment enough *other* holes are finished.
+
+**Ice factory.** Set `iceFactory = true` and `iceUnlockAfterHolesCompleted = N` on a `holeFactories`
+entry. The factory starts encased in its `m_iceFactory` ice block with a remaining-count badge
+(`m_iceUnlockRemainTxt`) and **holds its whole bundle** — nothing is produced, so the player can't see
+or target what's inside. The counter ticks down as other holes complete; when `N` are done the ice
+melts off (`SetActive(false)`) and the factory begins producing its bundle normally. The factory's own
+bundle holes don't count toward `N` (they don't exist yet), so keep `N` below the holes reachable
+elsewhere. `N = 0` (or `iceFactory = false`) = a normal factory.
 
 **Hole factory.** A factory occupies one `trackPosition` and produces a *bundle* of holes one at a
 time: hole `0` pops in; when a runner fills it, it fires `Hole.OnCompleted`, the factory unregisters

@@ -1418,6 +1418,8 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 421a8041c172d1248a550e33943aa540, type: 2}
   - {fileID: 11400000, guid: ae24a3be5a6f21645bf9830e5f900821, type: 2}
   - {fileID: 11400000, guid: 28633efa480cbbb4193cadd82c8ebc08, type: 2}
+  - {fileID: 11400000, guid: 0bb671633fcd743459e5bd3644f05b49, type: 2}
+  - {fileID: 11400000, guid: 86f65b5cce3364944a0acf6b4cc1dcee, type: 2}
   m_gameState: 0
   m_nextGameState: 0
   m_controlStatus: 0

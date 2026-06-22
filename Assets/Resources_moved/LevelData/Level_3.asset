@@ -65,7 +65,7 @@ MonoBehaviour:
   - trackPosition: 0.5
     bundle:
     - color: 0
-      requiredCount: 12
+      requiredCount: 4
       trackPosition: 0
       hidden: 0
       mechanic: 0
@@ -97,6 +97,8 @@ MonoBehaviour:
         position: {x: 0, y: 0, z: 0}
         rotationEuler: {x: 0, y: 0, z: 0}
         scale: {x: 0, y: 0, z: 0}
+    iceFactory: 0
+    iceUnlockAfterHolesCompleted: 0
     placement:
       overrideTransform: 1
       position: {x: -3, y: 0, z: 9.55}
@@ -137,6 +139,8 @@ MonoBehaviour:
         position: {x: 0, y: 0, z: 0}
         rotationEuler: {x: 0, y: 0, z: 0}
         scale: {x: 0, y: 0, z: 0}
+    iceFactory: 0
+    iceUnlockAfterHolesCompleted: 0
     placement:
       overrideTransform: 1
       position: {x: 3, y: 0, z: 9.55}

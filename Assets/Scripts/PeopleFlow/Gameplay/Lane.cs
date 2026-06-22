@@ -6,7 +6,10 @@ namespace PeopleFlow
 {
     public class Lane : MonoBehaviour
     {
-        const float MinEntrySpacing = 0.95f; // don't release if a runner is still this close to entry
+        // Don't release if a runner is still this close to entry. Public + const because RunwayTrack
+        // derives the runway's rank-packing capacity from the same spacing (2 * this per rank), so a
+        // "full" bar matches how the groups actually pack — single source of truth for that geometry.
+        public const float MinEntrySpacing = 0.95f;
 
         [Tooltip("Minimum seconds between group releases while held. This is a floor: the actual " +
                  "cadence is also bound by the hop time and entry spacing.")]
@@ -195,16 +198,23 @@ namespace PeopleFlow
 
             if (!IsHeld) return;
 
-            // NOTE: the runway-full lose decision lives SOLELY in RunwayTrack (its per-frame check fires
-            // on a genuine over-capacity overflow, or on a true deadlock: full + nobody can drain). The
-            // lane no longer instant-loses just because the bar reads full while held — a momentarily
-            // full runway that can still drain is not a loss (and a group still ASSEMBLING at the start
-            // counts toward capacity for ~1s before it can move, so a lane-side full check would punish
-            // a group that was about to set off and drain). Over-feeding is still punished: releasing
-            // another group while already full overflows capacity, which RunwayTrack catches.
+            // NOTE: a runway-full FAIL has two triggers. (1) ACTIVE overfill, here: while you hold a
+            // lane, trying to launch a group that won't fit on the runway fails the level — pushing
+            // more onto a full runway IS the lose. (2) PASSIVE deadlock, in RunwayTrack: a full runway
+            // that can't drain (while no lane is pushing) fails too. Capacity is rank-aware (see
+            // RunwayTrack.Build) so "full" lines up with the loop looking packed.
 
             m_timer -= Time.deltaTime;
             if (m_timer > 0f) return;
+
+            // Pushing another group onto a runway that can't fit it = overfilling it = fail the level.
+            // Only when a launch is actually wanted (previews left, not barriered) so an idle/blocked
+            // lane never self-fails.
+            if (m_previews.Count > 0 && !Barriered && WouldOverflowRunway())
+            {
+                GamePlayController.Instance.ReportRunwayJam();
+                return;
+            }
 
             if (CanRelease())
             {
@@ -213,13 +223,25 @@ namespace PeopleFlow
             }
         }
 
+        // True when the front group physically can't fit on the runway right now (it's full) — the
+        // signal to FAIL when the player keeps pushing. Count already includes in-flight members (they
+        // register as they board), so this is an honest "no room right now" test. An EMPTY runway
+        // always accepts the first group, so a group larger than a tiny manual capacity can still get
+        // on instead of dead-failing the lane.
+        bool WouldOverflowRunway()
+        {
+            if (m_track == null) return false;
+            int groupCount = FrontGroupCount();
+            if (groupCount <= 0) return false;
+            return m_track.Count > 0 && m_track.Count + groupCount > m_track.Capacity;
+        }
+
         bool CanRelease()
         {
             if (m_previews.Count == 0 || Barriered) return false;
 
-            // Release the whole front (single-colour) group. We deliberately do NOT gate on runway
-            // capacity: while held, the player keeps feeding the runway, and overflowing it past
-            // capacity loses the level (see RunwayTrack's over-capacity check) instead of stalling.
+            // Release the whole front (single-colour) group. Capacity is NOT gated here — pushing onto
+            // a full runway fails the level (see Update / WouldOverflowRunway), it doesn't block.
             int groupCount = FrontGroupCount();
             if (groupCount <= 0) return false;
 
