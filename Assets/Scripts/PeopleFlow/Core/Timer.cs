@@ -3,16 +3,11 @@ using UnityEngine;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// Counts down the level time while the game is playing. Reports timeout to
-    /// <see cref="GamePlayController"/>.
-    /// </summary>
     public class Timer : Singleton<Timer>
     {
         public float Remaining { get; private set; }
         public float Total { get; private set; }
 
-        /// <summary>Fired every frame while running: (remaining seconds, total seconds).</summary>
         public event Action<float, float> OnTick;
 
         bool m_running;

@@ -164,6 +164,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PeopleFlow.RunwayTrack
   m_segments: 128
+  m_minionArcFootprint: 0.4
+  m_splineContainer: {fileID: 0}
 --- !u!1 &118370374
 GameObject:
   m_ObjectHideFlags: 0
@@ -1414,6 +1416,8 @@ MonoBehaviour:
   m_isLevelDesign: 0
   m_levels:
   - {fileID: 11400000, guid: 421a8041c172d1248a550e33943aa540, type: 2}
+  - {fileID: 11400000, guid: ae24a3be5a6f21645bf9830e5f900821, type: 2}
+  - {fileID: 11400000, guid: 28633efa480cbbb4193cadd82c8ebc08, type: 2}
   m_gameState: 0
   m_nextGameState: 0
   m_controlStatus: 0

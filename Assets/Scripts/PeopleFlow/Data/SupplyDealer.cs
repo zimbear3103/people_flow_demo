@@ -3,32 +3,10 @@ using UnityEngine;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// Derives the people supply that fills the lanes from the level's <em>hole demand</em>, so a
-    /// designer only places holes + lanes and the waiting queues are generated to match
-    /// (supply == demand). Example: a factory bundling Red×12 and Blue×12 yields 12 red + 12 blue
-    /// previews dealt across the lanes — no hand-authored queues to keep in sync with the holes.
-    ///
-    /// "Demand" is the total runners each colour needs: the sum of every hole's
-    /// <see cref="HoleSetup.requiredCount"/>, across both standalone <see cref="LevelData.holes"/> and
-    /// every hole in every <see cref="LevelData.holeFactories"/> bundle. The demand is broken into
-    /// whole single-colour groups of <c>groupSize</c> (a trailing remainder forms one smaller group so
-    /// supply still equals demand exactly), the groups are shuffled deterministically by <c>seed</c>,
-    /// and dealt round-robin across the target lanes.
-    ///
-    /// Used at authoring time by <see cref="DefaultLevels"/> (so the code samples ship pre-filled) and
-    /// at build time by <see cref="LevelManager"/> (to fill any lane the designer left empty).
-    /// </summary>
     public static class SupplyDealer
     {
-        /// <summary>Minions per full single-colour group when none is otherwise specified.</summary>
-        public const int DefaultGroupSize = 3;
+        public const int DefaultGroupSize = 4;
 
-        /// <summary>
-        /// Total runners needed per colour (standalone holes + every factory-bundle hole), written
-        /// into <paramref name="order"/> (colours in first-seen order, so a later seeded shuffle is
-        /// deterministic) and <paramref name="demand"/> (colour → count). Both are cleared first.
-        /// </summary>
         public static void ComputeDemand(LevelData level, List<PeopleColor> order, Dictionary<PeopleColor, int> demand)
         {
             order.Clear();
@@ -51,13 +29,6 @@ namespace PeopleFlow
                         foreach (var hole in f.bundle) Add(hole);
         }
 
-        /// <summary>
-        /// Break a per-colour demand into whole single-colour groups of at most
-        /// <paramref name="groupSize"/> (a leftover forms one smaller group so the total still equals
-        /// demand), in <paramref name="order"/> sequence, then shuffle the whole groups
-        /// deterministically by <paramref name="seed"/>. Individuals are never split out of a group, so
-        /// every dealt group stays single-colour and full.
-        /// </summary>
         public static List<List<PeopleColor>> DealGroups(List<PeopleColor> order,
             Dictionary<PeopleColor, int> demand, int groupSize, int seed)
         {
@@ -89,15 +60,6 @@ namespace PeopleFlow
             return groups;
         }
 
-        /// <summary>
-        /// Resolve the waiting-queue colours for every lane in <paramref name="level"/>: a lane the
-        /// designer already authored keeps its list; a lane left empty is filled by dealing the
-        /// <em>remaining</em> hole demand (total demand minus what the authored lanes already supply)
-        /// as shuffled single-colour groups, round-robined across just the empty lanes — so total
-        /// supply still equals demand. Returned per-lane lists line up 1:1 with
-        /// <c>level.lanes</c>; entries may be null/empty when there is nothing to deal. Does not mutate
-        /// <paramref name="level"/> (authored lanes are returned by reference for read-only use).
-        /// </summary>
         public static List<List<PeopleColor>> ResolveLaneSupply(LevelData level, int seed)
         {
             int n = level != null && level.lanes != null ? level.lanes.Count : 0;
@@ -146,9 +108,6 @@ namespace PeopleFlow
             return result;
         }
 
-        /// <summary>Group size to deal with: the first empty lane's <see cref="LaneSetup.groupSize"/>
-        /// (so released groups match how that lane releases), falling back to
-        /// <see cref="DefaultGroupSize"/>.</summary>
         static int EmptyLaneGroupSize(LevelData level, List<int> emptyLanes)
         {
             foreach (int idx in emptyLanes)

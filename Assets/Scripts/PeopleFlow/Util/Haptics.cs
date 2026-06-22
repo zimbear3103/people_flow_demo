@@ -2,11 +2,6 @@ using UnityEngine;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// Light haptic feedback wrapper. On device it issues a short vibration; in the Editor it
-    /// no-ops. Uses the Android Vibrator service for a *short* buzz (Handheld.Vibrate is ~500ms,
-    /// too heavy for "light" feedback), and falls back to Handheld.Vibrate on iOS.
-    /// </summary>
     public static class Haptics
     {
         public static void Light()

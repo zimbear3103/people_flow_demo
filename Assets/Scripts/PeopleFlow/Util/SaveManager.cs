@@ -2,10 +2,6 @@ using UnityEngine;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// Persists cleared levels and audio settings via PlayerPrefs. Static + stateless so any
-    /// system can read/write without a reference. Keys are namespaced with "PF_".
-    /// </summary>
     public static class SaveManager
     {
         const string KeyHighest = "PF_HighestUnlocked"; // highest level index the player may pick
@@ -15,7 +11,6 @@ namespace PeopleFlow
 
         // ---- progression ----------------------------------------------------
 
-        /// <summary>Highest level index the player has unlocked (0-based). Always at least 0.</summary>
         public static int HighestUnlocked
         {
             get => PlayerPrefs.GetInt(KeyHighest, 0);
@@ -25,7 +20,6 @@ namespace PeopleFlow
         public static bool IsCleared(int levelIndex)
             => PlayerPrefs.GetInt(KeyClearedPrefix + levelIndex, 0) == 1;
 
-        /// <summary>Marks a level cleared and unlocks the next one.</summary>
         public static void MarkCleared(int levelIndex)
         {
             PlayerPrefs.SetInt(KeyClearedPrefix + levelIndex, 1);

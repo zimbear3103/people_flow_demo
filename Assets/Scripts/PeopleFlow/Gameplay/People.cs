@@ -3,11 +3,6 @@ using UnityEngine;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// A little coloured person running around the loop. Advances a normalised position along
-    /// the <see cref="RunwayTrack"/>, detects when it crosses a matching open hole, reserves a
-    /// slot, then hops in and despawns.
-    /// </summary>
     public class People : MonoBehaviour
     {
         [SerializeField]
@@ -15,7 +10,7 @@ namespace PeopleFlow
         [SerializeField]
         private float JumpHeight = 1.3f;
         [SerializeField]
-        private float JumpDuration = 0.32f;
+        private float JumpDuration = 0.01f;
         [SerializeField]
         private float m_previewSlideSpeed = 6f; // how quickly a waiting minion eases to its lane slot
 
@@ -24,13 +19,10 @@ namespace PeopleFlow
         public bool IsPreview { get; private set; }        // standing in a lane queue, not yet on the track
         public bool IsEnteringRoad { get; private set; }   // hopping from the lane onto the track
         public bool IsPendingPeel { get; private set; }    // reserved a hole, waiting its turn to drop in
+        public float TrackT => m_t;
 
-        /// <summary>The slot in the lane line this preview should ease toward (set by <see cref="Lane"/>).</summary>
         public Vector3 PreviewTarget { get; set; }
 
-        /// <summary>Position to use for entry-spacing: while entering, the landing point it has
-        /// reserved; otherwise the live position. Lets the lane treat an in-flight runner as already
-        /// occupying the entry so a held lane doesn't stack hops on top of each other.</summary>
         public Vector3 SpacingPosition => IsEnteringRoad ? m_entryLanding : transform.position;
 
         RunwayTrack m_track;
@@ -40,69 +32,86 @@ namespace PeopleFlow
         RunnerGroup m_group;   // non-null while this runner is part of a moving crowd block
         private Animator m_animator;
 
-        /// <summary>True while this runner belongs to a <see cref="RunnerGroup"/> that drives its
-        /// position; such a runner does not self-advance along the loop.</summary>
         public bool IsInGroup => m_group != null;
         // ---- factory --------------------------------------------------------
 
-        /// <summary>
-        /// Instantiate a runner from the assigned character prefab, tint its body to
-        /// <paramref name="color"/>, and start it running from <paramref name="startT"/>.
-        /// </summary>\
         private void Start()
         {
             m_animator = GetComponent<Animator>();
+        }
+
+        private void OnEnable()
+        {   
+            EventManager.Instance.On("lose", onDie);
+        }
+        private void OnDisable()
+        {
+            //EventManager.Instance.Off("lose", onDie);
         }
         public static People Spawn(GameObject prefab, PeopleColor color, RunwayTrack track,
             MaterialLibrary mats, float startT, float speed, Transform parent)
         {
             if (prefab == null)
             {
-                PFLog.Error("People.Spawn: no character prefab assigned — cannot release a runner.");
+                Debug.LogError("People.Spawn: no character prefab assigned — cannot release a runner.");
                 return null;
             }
 
-            var go = Instantiate(prefab, parent);
+            var go = PoolingObject.Instance.Get(prefab, parent);
             var c = go.GetComponent<People>();
             if (c == null)
             {
-                PFLog.Error($"People.Spawn: character prefab '{prefab.name}' has no People component.");
+                Debug.LogError($"People.Spawn: character prefab '{prefab.name}' has no People component.");
                 Object.Destroy(go);
                 return null;
             }
 
             go.name = "Runner_" + color;
+            c.ResetState();
             c.ApplyColor(mats, color);
             c.Init(color, track, startT, speed);
             return c;
         }
 
-        /// <summary>
-        /// Instantiate a runner as a lane preview: coloured and placed standing on the lane, but not
-        /// registered or running. Call <see cref="LaunchToRoad"/> to send it onto the track.
-        /// </summary>
         public static People SpawnPreview(GameObject prefab, PeopleColor color, MaterialLibrary mats,
             Transform parent, Vector3 worldPos, Quaternion worldRot)
         {
             if (prefab == null)
             {
-                PFLog.Error("People.SpawnPreview: no character prefab assigned — cannot show a lane preview.");
+                Debug.LogError("People.SpawnPreview: no character prefab assigned — cannot show a lane preview.");
                 return null;
             }
 
-            var go = Instantiate(prefab, parent);
+            var go = PoolingObject.Instance.Get(prefab, parent);
             var c = go.GetComponent<People>();
             if (c == null)
             {
-                PFLog.Error($"People.SpawnPreview: character prefab '{prefab.name}' has no People component.");
+                Debug.LogError($"People.SpawnPreview: character prefab '{prefab.name}' has no People component.");
                 Object.Destroy(go);
                 return null;
             }
 
             go.name = "Preview_" + color;
+            c.ResetState();
             c.ApplyColor(mats, color);
             c.InitPreview(color, worldPos, worldRot);
             return c;
+        }
+
+        internal void ResetState()
+        {
+            StopAllCoroutines(); // drop any in-flight hop/pop from the previous life
+            IsJumping = false;
+            IsPreview = false;
+            IsEnteringRoad = false;
+            IsPendingPeel = false;
+            m_group = null;
+            m_track = null;
+            m_t = 0f;
+            m_speed = 0f;
+            m_entryLanding = Vector3.zero;
+            // Start() caches this, but it hasn't run yet on a brand-new instance's first spawn.
+            if (m_animator == null) m_animator = GetComponent<Animator>();
         }
 
         void ApplyColor(MaterialLibrary mats, PeopleColor color)
@@ -125,7 +134,7 @@ namespace PeopleFlow
             if (baseScale == Vector3.zero) baseScale = Vector3.one;
 
             m_track.Register(this);
-            StartCoroutine(TweenUtil.ScalePop(transform, baseScale, 0.22f));
+            StartCoroutine(Tweener.ScalePop(transform, baseScale, 0.22f));
         }
 
         void InitPreview(PeopleColor color, Vector3 worldPos, Quaternion worldRot)
@@ -137,16 +146,9 @@ namespace PeopleFlow
 
             Vector3 baseScale = transform.localScale;
             if (baseScale == Vector3.zero) baseScale = Vector3.one;
-            StartCoroutine(TweenUtil.ScalePop(transform, baseScale, 0.22f));
+            StartCoroutine(Tweener.ScalePop(transform, baseScale, 0.22f));
         }
 
-        /// <summary>
-        /// Send a preview minion from its lane slot onto the track: hop in an arc to the entry point,
-        /// then start running. Registers immediately so it counts toward runway capacity and reserves
-        /// the entry slot for the duration of the hop. An optional <paramref name="delay"/> holds the
-        /// minion at its tray slot before hopping, so a released group enters as an ordered wave
-        /// (left-to-right / right-to-left) instead of all members leaping at once.
-        /// </summary>
         public void LaunchToRoad(RunwayTrack track, float startT, float speed, float delay = 0f)
         {
             if (track == null) return;
@@ -165,16 +167,12 @@ namespace PeopleFlow
             StartCoroutine(LaunchRoutine(t, landRot, Mathf.Max(0f, delay)));
         }
 
-        /// <summary>Hold at the tray slot for <paramref name="delay"/> seconds (this member's turn in
-        /// the group's wave), then hop onto the track and begin running. The minion is already
-        /// registered + <see cref="IsEnteringRoad"/> during the hold, so it neither runs nor reflows
-        /// as a preview and its reserved landing still blocks the entry for spacing.</summary>
         IEnumerator LaunchRoutine(float t, Quaternion landRot, float delay)
         {
             for (float e = 0f; e < delay; e += Time.deltaTime)
                 yield return null;
 
-            yield return TweenUtil.HopArc(transform, m_entryLanding, JumpHeight, JumpDuration, () =>
+            yield return Tweener.HopArc(transform, m_entryLanding, JumpHeight, JumpDuration, () =>
             {
                 m_t = t;
                 transform.rotation = landRot;
@@ -184,18 +182,9 @@ namespace PeopleFlow
 
         // ---- crowd block ----------------------------------------------------
 
-        /// <summary>The <see cref="RunnerGroup"/> calls this when this runner joins a block. It then
-        /// drives the runner's pose, so <see cref="Update"/> stops self-advancing it.</summary>
         internal void SetGroup(RunnerGroup group) => m_group = group;
 
-        /// <summary>
-        /// Send a preview minion from its lane slot into a moving crowd <see cref="RunnerGroup"/>: hop
-        /// one-by-one (after <paramref name="delay"/>) toward this member's grid slot, then hand control
-        /// to the group, which drives it in formation. Registers immediately so it still counts toward
-        /// runway capacity, and reports a near-entry spacing position so a held lane doesn't spawn the
-        /// next crowd on top of this one before it has formed up.
-        /// </summary>
-        public void LaunchIntoGroup(RunwayTrack track, RunnerGroup group, int row, int col, float delay = 0f)
+        public void LaunchIntoGroup(RunwayTrack track, RunnerGroup group, int row, int col, int launchOrder = 0)
         {
             if (track == null || group == null) return;
             transform.position = PreviewTarget; // start the hop from the exact tray slot
@@ -206,20 +195,35 @@ namespace PeopleFlow
             m_entryLanding = group.SlotWorldNow(row, col, out _); // approximate entry occupancy for spacing
             track.Register(this);
 
-            StartCoroutine(GroupEntryRoutine(group, row, col, Mathf.Max(0f, delay)));
+            StartCoroutine(GroupEntryRoutine(group, row, col, Mathf.Max(0, launchOrder)));
         }
 
-        IEnumerator GroupEntryRoutine(RunnerGroup group, int row, int col, float delay)
+        IEnumerator GroupEntryRoutine(RunnerGroup group, int row, int col, int launchOrder)
         {
-            for (float e = 0f; e < delay; e += Time.deltaTime)
+            // Bail if the level is being torn down/rebuilt mid-entry (track destroyed) so we don't hop
+            // toward a slot on a dead track. (group is a plain object guarded non-null by the caller.)
+            if (group == null || m_track == null) yield break;
+
+            // Wait until every member ahead of us has finished its entry hop, so the group lands on the
+            // road strictly one-at-a-time (no overlapping leaps). Bail only on a real STALL (no member
+            // ahead has landed for a while) so a destroyed predecessor can't hang us forever — this stays
+            // correct no matter how big the group is, since it resets each time progress is made.
+            int lastSeen = group.EnteredCount;
+            float stall = 0f;
+            while (group.EnteredCount < launchOrder)
+            {
+                if (group.EnteredCount != lastSeen) { lastSeen = group.EnteredCount; stall = 0f; }
+                else stall += Time.deltaTime;
+                if (stall > 2f) break;
                 yield return null;
+            }
 
             // Aim the hop at the slot's current position; the group eases out the small residual (the
             // slot drifts forward while we are mid-air) with a short blend once we land.
             Vector3 landing = group.SlotWorldNow(row, col, out Quaternion landRot);
             m_entryLanding = landing;
             transform.rotation = landRot;
-            yield return TweenUtil.HopArc(transform, landing, JumpHeight, JumpDuration, () =>
+            yield return Tweener.HopArc(transform, landing, JumpHeight, JumpDuration, () =>
             {
                 transform.rotation = landRot;
                 IsEnteringRoad = false;
@@ -227,20 +231,14 @@ namespace PeopleFlow
             });
         }
 
-        /// <summary>The group writes this runner's world pose each frame while it runs in formation.</summary>
         internal void SetGroupPose(Vector3 pos, Quaternion rot)
         {
             transform.SetPositionAndRotation(pos, rot);
             if (m_animator != null) m_animator.SetBool("isRun", true);
         }
 
-        /// <summary>The group calls this when it reserves a hole's slot for this runner — it will drop
-        /// in shortly. Flags it as a pending move so the runway-jam check doesn't treat a crowd waiting
-        /// its peel turn as a dead-locked, full runway.</summary>
         internal void MarkPendingPeel() => IsPendingPeel = true;
 
-        /// <summary>The group hands this runner the hole it reserved when its turn comes to drop in:
-        /// detach from the crowd and hop in via the shared jump path.</summary>
         internal void PeelIntoHole(Hole hole)
         {
             m_group = null;        // the group has already removed us from its formation
@@ -308,17 +306,18 @@ namespace PeopleFlow
         {
             IsJumping = true;
             Vector3 target = hole.JumpTarget + Vector3.up * 0.1f;
-            StartCoroutine(TweenUtil.HopInto(transform, target, JumpHeight, JumpDuration, () =>
+            StartCoroutine(Tweener.HopInto(transform, target, JumpHeight, JumpDuration, () =>
             {
                 hole.Commit();
                 if (m_track != null) m_track.Unregister(this);
-                Destroy(gameObject);
+                // Recycle instead of destroying so the next spawn reuses this body (see PoolingObject).
+                if (PoolingObject.Instance != null) PoolingObject.Instance.Release(gameObject);
+                else Destroy(gameObject);
             }));
         }
 
         // ---- helpers --------------------------------------------------------
 
-        /// <summary>True if moving forward from oldT to newT crossed target (wrap-aware).</summary>
         static bool PassedForward(float oldT, float newT, float target)
         {
             if (Mathf.Approximately(oldT, newT)) return false;
@@ -326,11 +325,16 @@ namespace PeopleFlow
             return target > oldT || target <= newT; // wrapped past 1.0 → 0.0
         }
 
-        /// <summary>Shortest distance between two normalised positions on the loop.</summary>
         static float WrapDistance(float a, float b)
         {
             float d = Mathf.Abs(Mathf.Repeat(a - b, 1f));
             return Mathf.Min(d, 1f - d);
+        }
+
+        private void onDie()
+        {
+            if (!IsPreview)
+            m_animator.SetBool("isDie", true);
         }
     }
 }

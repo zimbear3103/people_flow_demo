@@ -3,21 +3,12 @@ using UnityEngine;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// Creates and caches simple URP/Lit materials at runtime so the game needs zero pre-made
-    /// material assets. Falls back to Standard / a default shader if URP is somehow not present.
-    /// </summary>
     public class MaterialLibrary
     {
         readonly Dictionary<int, Material> m_cache = new Dictionary<int, Material>();
         readonly Dictionary<PeopleColor, Material> m_colorOverrides;
         readonly Shader m_shader;
 
-        /// <param name="colorOverrides">
-        /// Optional designer-assigned material per colour (see <see cref="ColorMaterialSet"/>).
-        /// A colour present here returns its material from <see cref="Colored"/>; any other colour
-        /// falls back to a generated material.
-        /// </param>
         public MaterialLibrary(Dictionary<PeopleColor, Material> colorOverrides = null)
         {
             m_colorOverrides = colorOverrides;
@@ -26,7 +17,6 @@ namespace PeopleFlow
                        ?? Shader.Find("Sprites/Default");
         }
 
-        /// <summary>A cached opaque material of the given colour.</summary>
         public Material Solid(Color c, float smoothness = 0.12f)
         {
             int key = Key(c, smoothness);
@@ -42,7 +32,6 @@ namespace PeopleFlow
             return m;
         }
 
-        /// <summary>The designer-assigned material for this colour if one is mapped, else a generated one.</summary>
         public Material Colored(PeopleColor c)
         {
             if (m_colorOverrides != null && m_colorOverrides.TryGetValue(c, out var m) && m != null)
@@ -50,7 +39,6 @@ namespace PeopleFlow
             return Solid(c.ToColor());
         }
 
-        /// <summary>True if a designer material is mapped for this colour (vs. a generated one).</summary>
         public bool HasColorOverride(PeopleColor c)
             => m_colorOverrides != null && m_colorOverrides.TryGetValue(c, out var m) && m != null;
 

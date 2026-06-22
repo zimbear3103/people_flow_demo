@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using PeopleFlow;
 using UnityEngine;
 
@@ -48,7 +49,7 @@ public class GamePlayController : Singleton<GamePlayController>
     private int m_countEnterStartLevel = 1;
     private int m_countLevelRevive = 0;
     private float m_levelTimeSpent = 0;
-    private float m_playerDeadWaitingTime = 2;
+    private float m_playerDeadWaitingTime = 0.5f;
     private float m_bossDeadWaitingTime = 2;
     private float m_WaitingTimer = 0.0f;
     public bool IsLevelDesign => m_isLevelDesign;
@@ -63,9 +64,7 @@ public class GamePlayController : Singleton<GamePlayController>
     public bool IsTutorial { set; get; } = false;
     public int CountLevelRevive => m_countLevelRevive;
 
-    /// <summary>Number of authored levels available to play.</summary>
     public int LevelCount => m_levels != null ? m_levels.Length : 0;
-    /// <summary>True if there is another level after the player's current one.</summary>
     public bool HasNextLevel => (UserProfile.Instance.Level + 1) < LevelCount;
 
     LevelData m_currentLevel;
@@ -93,18 +92,18 @@ public class GamePlayController : Singleton<GamePlayController>
             uiIngame.OnSetLevel(UserProfile.Instance.Level);
 
 #if USE_CHEAT
-            CheatGame.Instance.SetupCheat(
-                () =>
-                {
-                    GameLog.Log(LogType.Log, $"win game");
-                    ForceWin();
-                },
-                () =>
-                {
-                    GameLog.Log(LogType.Log, $"lose game");
-                    ForceLose();
-                }
-            );
+            //CheatGame.Instance.SetupCheat(
+            //    () =>
+            //    {
+            //        GameLog.Log(LogType.Log, $"win game");
+            //        ForceWin();
+            //    },
+            //    () =>
+            //    {
+            //        GameLog.Log(LogType.Log, $"lose game");
+            //        ForceLose();
+            //    }
+            //);
 #endif// USE_CHEAT
         }
     }
@@ -424,11 +423,13 @@ public class GamePlayController : Singleton<GamePlayController>
         SetGameControlStatus(ControlStatusType.Exit, GameStateType.EndLevel);
     }
 
-    public void PlayerLose(float waitTime)
+    public IEnumerator PlayerLose(float waitTime)
     {
+        EventManager.Instance.Emit("lose");
         m_playerDeadWaitingTime = waitTime;
         m_WaitingTimer = 0.0f;
         IsGamePlaying = false;
+        yield return new WaitForSeconds(waitTime);
         SetGameControlStatus(ControlStatusType.Exit, GameStateType.Lose);
     }
 
@@ -559,7 +560,7 @@ public class GamePlayController : Singleton<GamePlayController>
         LastLoseReason = reason;
         IsGamePlaying = false;
         OnLevelLose?.Invoke(reason);
-        PlayerLose(m_playerDeadWaitingTime);
+        StartCoroutine(PlayerLose(m_playerDeadWaitingTime));
     }
 
     public void PlayerWin(float waitTime)

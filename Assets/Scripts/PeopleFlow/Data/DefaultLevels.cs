@@ -3,34 +3,10 @@ using UnityEngine;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// Code-defined sample levels of increasing difficulty, so the game is fully playable from an
-    /// empty scene with no hand-authored assets. The Editor menu "PeopleFlow ▸ Generate Sample
-    /// Levels" writes the same data out as LevelData .asset files for designer-friendly tweaking.
-    ///
-    /// FULL-GROUP DESIGN:
-    ///  • Every hole's required count is a multiple of <see cref="GroupSize"/>, and supply is dealt as
-    ///    whole single-colour groups of that size. So the waiting line never holds a partial group —
-    ///    each tap releases exactly one full colour group, and a full group exactly fills one hole's
-    ///    worth of slots. No leftover minions, no half-filled holes.
-    ///
-    /// SOLVABILITY GUARANTEE:
-    ///  • L1–L3 (no locked holes): built with supply == demand, dealt as whole colour groups. Every
-    ///    colour has an always-open hole and an exact number of full groups, so any push sequence
-    ///    wins. Hidden colour (L3) is visual only.
-    ///  • L4–L5 (frozen / gate / lane-barrier): hand-authored with a verified solution order, each
-    ///    lane a single full colour group. Locked colours and the barrier's blocked lane never hold
-    ///    colour that's needed to *reach* the unlock condition, so there is always a path. Pushing a
-    ///    locked colour early (before it unlocks) is how you can still LOSE by jamming — intended tension.
-    /// </summary>
     public static class DefaultLevels
     {
         public const int Count = 5;
 
-        /// <summary>Minions per full single-colour group. Hole counts are multiples of this and supply
-        /// is dealt in blocks of it, so every released group is full. Mirrors the Lane's release size
-        /// (pushed into each lane via <see cref="LaneSetup.groupSize"/>). Shared with the build-time
-        /// dealer (<see cref="SupplyDealer.DefaultGroupSize"/>).</summary>
         public const int GroupSize = SupplyDealer.DefaultGroupSize;
 
         // Short aliases keep the level tables readable.
@@ -57,28 +33,28 @@ namespace PeopleFlow
         // Rounded-rectangle loop (showcases the non-oval shapes; any push order still wins).
         static LevelData Level1() => Shape(Deal(1, 70f, 14, 3.0f, 7f, 11f, new List<HoleSetup>
         {
-            H(R, 3, 0.30f),
-            H(B, 3, 0.70f),
+            H(R, GroupSize, 0.30f),
+            H(B, GroupSize, 0.70f),
         }, laneCount: 2, seed: 11), TrackShape.Rectangle, cornerRadius: 2f);
 
         // Level 2 showcases the hole FACTORY: instead of three separate holes around the loop, one
         // factory produces a bundle of R→G→B in turn. Fill the red hole and it disappears, the green
-        // hole takes its place, then blue. Supply is still dealt to match the bundle (3 of each).
+        // hole takes its place, then blue. Supply is still dealt to match the bundle (one full group of each).
         static LevelData Level2() => Deal(2, 65f, 14, 3.4f, 7f, 11f,
             holes: new List<HoleSetup>(),
             laneCount: 3, seed: 22,
             factories: new List<HoleFactorySetup>
             {
-                Factory(0.5f, H(R, 3, 0f), H(G, 3, 0f), H(B, 3, 0f)),
+                Factory(0.5f, H(R, GroupSize, 0f), H(G, GroupSize, 0f), H(B, GroupSize, 0f)),
             });
 
         // Sharp-cornered rectangle loop ("kinky" corners — cornerRadius 0).
         static LevelData Level3() => Shape(Deal(3, 60f, 12, 3.7f, 7.5f, 11f, new List<HoleSetup>
         {
-            H(R, 6, 0.18f),                  // 6 = two full groups
-            H(B, 6, 0.42f),
-            H(G, 3, 0.66f),
-            H(Y, 3, 0.90f, hidden: true),    // hidden colour: shown as "?" until a runner is close
+            H(R, GroupSize * 2, 0.18f),          // two full groups
+            H(B, GroupSize * 2, 0.42f),
+            H(G, GroupSize, 0.66f),
+            H(Y, GroupSize, 0.90f, hidden: true),// hidden colour: shown as "?" until a runner is close
         }, laneCount: 4, seed: 33), TrackShape.Rectangle);
 
         // ---- L4: frozen hole + lane barrier (hand-authored & verified) ------
@@ -136,8 +112,6 @@ namespace PeopleFlow
                 hidden = hidden, mechanic = mechanic, unlockAfterHolesCompleted = unlockAfter,
             };
 
-        /// <summary>A hole factory at <paramref name="t"/> producing <paramref name="bundle"/> in order
-        /// (each bundle entry's own trackPosition is ignored — the factory position is used).</summary>
         static HoleFactorySetup Factory(float t, params HoleSetup[] bundle)
         {
             var f = new HoleFactorySetup { trackPosition = t };
@@ -159,8 +133,6 @@ namespace PeopleFlow
             return lane;
         }
 
-        /// <summary>Override a level's loop shape (and optional corner rounding for Rectangle/Square).
-        /// Returns the same data so it can wrap a Deal(...) / Make(...) call inline.</summary>
         static LevelData Shape(LevelData data, TrackShape shape, float cornerRadius = 0f)
         {
             data.trackShape = shape;
@@ -182,7 +154,6 @@ namespace PeopleFlow
             return data;
         }
 
-        /// <summary>Hand-authored level: explicit holes + lanes (used where solvability needs care).</summary>
         static LevelData Make(int number, float time, int cap, float speed, float w, float h,
             List<HoleSetup> holes, List<LaneSetup> lanes, List<ArrowSetup> arrows = null)
         {
@@ -193,10 +164,6 @@ namespace PeopleFlow
             return data;
         }
 
-        /// <summary>Auto-dealt level: supply == demand, dealt as whole single-colour groups of
-        /// <see cref="GroupSize"/> (seeded). Demand counts both standalone holes and every hole across
-        /// the factory bundles. Whole groups are round-robined onto lanes, so each lane holds only
-        /// complete colour groups.</summary>
         static LevelData Deal(int number, float time, int cap, float speed, float w, float h,
             List<HoleSetup> holes, int laneCount, int seed, List<HoleFactorySetup> factories = null)
         {

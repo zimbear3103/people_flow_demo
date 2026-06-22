@@ -3,23 +3,10 @@ using UnityEngine;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// Generates the ordered points of a closed runway loop for a given <see cref="TrackShape"/>.
-    /// Points are LOCAL (XZ plane, Y = 0), centred on the origin, and form a closed loop: the path
-    /// runs from the last point back to the first (the start point is NOT duplicated at the end).
-    ///
-    /// Index 0 always sits at the bottom-centre so it lines up with <see cref="RunwayTrack.EntryT"/>
-    /// (= 0), where the lanes feed runners in. Straight edges need only their two endpoints — the
-    /// track's arc-length engine interpolates between consecutive points — so a rectangle is just a
-    /// handful of corner points and naturally produces sharp "kinky" corners. Curves (the oval and
-    /// rounded corners) are sampled densely.
-    /// </summary>
     public static class TrackPath
     {
         const int CornerArcSegments = 6; // samples per rounded corner (quarter arc)
 
-        /// <summary>Build the loop points for the level's shape. <paramref name="ovalSegments"/> is the
-        /// sample count used for the smooth oval.</summary>
         public static List<Vector3> Build(LevelData level, int ovalSegments)
         {
             switch (level.trackShape)
@@ -43,7 +30,6 @@ namespace PeopleFlow
 
         // ---- shapes ---------------------------------------------------------
 
-        /// <summary>A smooth ellipse, <paramref name="n"/> points starting at the bottom-centre.</summary>
         static List<Vector3> Oval(float w, float h, int n)
         {
             float a = w * 0.5f, b = h * 0.5f;
@@ -58,9 +44,6 @@ namespace PeopleFlow
             return pts;
         }
 
-        /// <summary>A <paramref name="w"/>×<paramref name="h"/> rectangle. <paramref name="radius"/> ≤ 0
-        /// gives sharp corners (just the four corners + a bottom-centre start); a positive radius
-        /// (clamped to half the shorter side) rounds each corner with a quarter-arc.</summary>
         static List<Vector3> RoundedRect(float w, float h, float radius)
         {
             float a = w * 0.5f, b = h * 0.5f;
@@ -90,13 +73,11 @@ namespace PeopleFlow
             return pts;
         }
 
-        /// <summary>The designer's manual path, copied with Y flattened. Falls back to an oval if too
-        /// few points were supplied to form a loop.</summary>
         static List<Vector3> Custom(List<Vector3> waypoints, float w, float h, int ovalSegments)
         {
             if (waypoints == null || waypoints.Count < 3)
             {
-                PFLog.Warn("TrackPath: Custom shape needs at least 3 waypoints — falling back to an oval.");
+                Debug.LogWarning("TrackPath: Custom shape needs at least 3 waypoints — falling back to an oval.");
                 return Oval(w, h, ovalSegments);
             }
 
@@ -107,9 +88,6 @@ namespace PeopleFlow
 
         // ---- helpers --------------------------------------------------------
 
-        /// <summary>Append a quarter-arc (inclusive of both endpoints) of <paramref name="r"/> around
-        /// the inset centre (<paramref name="cx"/>, <paramref name="cz"/>), sweeping from
-        /// <paramref name="startDeg"/> to <paramref name="endDeg"/>.</summary>
         static void AddArc(List<Vector3> into, float cx, float cz, float r, float startDeg, float endDeg)
         {
             for (int k = 0; k <= CornerArcSegments; k++)

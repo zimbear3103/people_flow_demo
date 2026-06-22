@@ -25,6 +25,7 @@ public class UIHome : UIScreen
     [SerializeField] private Toggle m_homeButton;
     [SerializeField] private Toggle m_leaderboardButton;
 
+    [SerializeField] private GameObject m_levelNodePrefab;
     private int m_currentLevel;
     private int m_countEffectLevel = 0;
     private int m_maxLevel = 10;
@@ -34,6 +35,15 @@ public class UIHome : UIScreen
         m_playButton.onClick.AddListener(OnPlayButtonPressed);
         m_settingButton.onClick.AddListener(OnSettingButtonPressed);
         m_coinButton.onClick.AddListener(OnCoinButtonPressed);
+
+        if (m_levelNodes != null)
+        {
+            for (int i = 0; i < m_levelNodes.Length; i++)
+            {
+                if (m_levelNodes[i] != null)
+                    m_levelNodes[i].OnLevelClick += OnLevelNodeClicked;
+            }
+        }
     }
 
     private void OnDisable()
@@ -41,6 +51,15 @@ public class UIHome : UIScreen
         m_playButton.onClick.RemoveListener(OnPlayButtonPressed);
         m_settingButton.onClick.RemoveListener(OnSettingButtonPressed);
         m_coinButton.onClick.RemoveListener(OnCoinButtonPressed);
+
+        if (m_levelNodes != null)
+        {
+            for (int i = 0; i < m_levelNodes.Length; i++)
+            {
+                if (m_levelNodes[i] != null)
+                    m_levelNodes[i].OnLevelClick -= OnLevelNodeClicked;
+            }
+        }
     }
 
     private void Start()
@@ -55,7 +74,6 @@ public class UIHome : UIScreen
         SetLevelUI();
         OnSetLevel(UserProfile.Instance.Level);
         OnSetCoins(UserProfile.Instance.Coin);
-        //SetBackgroundByLevel(UserProfile.Instance.Level + 1);
         SoundManager.Instance.OnPlayMusic(ESoundId.Bg_MainMenu, isLoop: true, 1f);
         m_currentLevel = UserProfile.Instance.Level + 1;
     }
@@ -63,7 +81,18 @@ public class UIHome : UIScreen
     private void OnPlayButtonPressed()
     {
         SoundManager.Instance.OnPlaySfxAudio(ESoundId.UI_Click_ButtonMain);
-        MainStateManager.Instance.SetStatus(MainStateManager.MainStatusType.Exit, MainStateManager.MainStateType.Gameplay);       
+        MainStateManager.Instance.SetStatus(MainStateManager.MainStatusType.Exit, MainStateManager.MainStateType.Gameplay);
+    }
+
+    // Raised by an unlocked LevelNode when tapped. Node levels are 1-based; UserProfile.Level
+    // (and the LevelData index GamePlayController plays) is 0-based. Selecting the level and
+    // entering Gameplay mirrors OnPlayButtonPressed — StartLevel() then builds m_levels[Level]
+    // and persists the choice via SaveGameData().
+    private void OnLevelNodeClicked(int level)
+    {
+        SoundManager.Instance.OnPlaySfxAudio(ESoundId.UI_Click_ButtonMain);
+        UserProfile.Instance.Level = level - 1;
+        MainStateManager.Instance.SetStatus(MainStateManager.MainStatusType.Exit, MainStateManager.MainStateType.Gameplay);
     }
     public void OnSetLevel(int level)
     {
@@ -131,7 +160,7 @@ public class UIHome : UIScreen
         ResetStateLevelUI();
         for (int i = 0; i < m_levelNodes.Length; i++)
         {
-            int levelNode = i + UserProfile.Instance.Level + 1;
+            int levelNode = i + 1;
             if (levelNode > m_maxLevel)
             {
                 m_levelNodes[i].SetNoneLevel(levelNode);
@@ -143,7 +172,7 @@ public class UIHome : UIScreen
                 m_levelNodes[i].gameObject.SetActive(true);
             }
 
-            if (m_levelNodes[i].Level == (UserProfile.Instance.Level + 1))
+            if (levelNode <= (UserProfile.Instance.Level + 1))
             {
                 m_levelNodes[i].OnActiveLevel();
             }

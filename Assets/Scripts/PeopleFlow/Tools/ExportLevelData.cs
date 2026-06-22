@@ -6,24 +6,6 @@ using UnityEditor;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// Editor authoring tool — the inverse of <see cref="LevelManager.Build"/>. It reads the level
-    /// laid out in this scene (the <see cref="RunwayTrack"/>, the <see cref="HoleFactory"/> objects
-    /// and their hole bundles, any standalone <see cref="Hole"/> objects, and the <see cref="Lane"/>
-    /// objects under a <see cref="LevelManager"/>) and writes it back out as a <see cref="LevelData"/>
-    /// asset, capturing every object's transform into its <see cref="TransformSpec"/> placement
-    /// (<c>overrideTransform = true</c>). A designer arranges the level visually, then bakes a
-    /// LevelData with one click — Right-click the component ▸ "Export Level Data".
-    ///
-    /// The scene only holds what its components actually serialize: placements, the factory / lane /
-    /// hole counts, and each hole's colour and required count. Data the scene cannot hold — the level
-    /// rules (time limit, speeds, loop size, capacity, shape, arrows), each lane's character queue,
-    /// and hole specials (hidden / frozen / gate) — is copied from an optional <see cref="m_template"/>
-    /// LevelData by index, or left at sensible defaults.
-    ///
-    /// Mirrors the CapyPuzzle <c>ExportLevelData</c> pattern: a scene MonoBehaviour with an export
-    /// action, guarded by <c>UNITY_EDITOR</c> so it strips cleanly from player builds.
-    /// </summary>
     public class ExportLevelData : MonoBehaviour
     {
         [Header("Source — the scene layout to read")]
@@ -140,11 +122,6 @@ namespace PeopleFlow
 
         // ---- transform capture ----------------------------------------------
 
-        /// <summary>Capture a transform as a pinned <see cref="TransformSpec"/>. The build consumes
-        /// <c>placement.position</c> / <c>.Rotation</c> as WORLD and <c>.scale</c> as local scale
-        /// (see <see cref="LevelManager"/>.SpawnFactory / BuildLanes and
-        /// <see cref="TransformSpec.ApplyWorld"/>), so we store world position + world euler + local
-        /// scale, with the override on.</summary>
         static TransformSpec CaptureWorld(Transform t) => new TransformSpec
         {
             overrideTransform = true,
@@ -159,6 +136,7 @@ namespace PeopleFlow
         {
             if (from == null) return;
             to.timeLimit = from.timeLimit;
+            to.autoRunwayCapacity = from.autoRunwayCapacity;
             to.runwayCapacity = from.runwayCapacity;
             to.runSpeed = from.runSpeed;
             to.trackShape = from.trackShape;

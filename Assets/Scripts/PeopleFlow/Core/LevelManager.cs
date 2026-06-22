@@ -1,13 +1,9 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Splines;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// Builds one level's gameplay objects from <see cref="LevelData"/>: the runway track + its
-    /// visual, the holes placed around the loop, and the lanes with their populated queues. Then
-    /// wires input/timer/UI and tells <see cref="GamePlayController"/> to start.
-    /// </summary>
     public class LevelManager : Singleton<LevelManager>
     {
         [Header("Level prefabs (required — drag in your Hole, Lane and Character prefabs)")]
@@ -21,7 +17,6 @@ namespace PeopleFlow
         [SerializeField] private RunwayTrack Track;
         [SerializeField] private Transform m_roadRoots;
 
-        /// <summary>The runway track the current level was built on (HUD / queries). Null before Build.</summary>
         public RunwayTrack ActiveTrack => Track;
 
         [Header("Colour materials")]
@@ -37,14 +32,8 @@ namespace PeopleFlow
         public readonly List<Lane> Lanes = new List<Lane>();
         Transform m_runnersRoot;
 
-        /// <summary>
-        /// Supply / override the level prefabs before <see cref="Build"/> runs. Used by the entry
-        /// components, which create the LevelManager at runtime (so its own inspector slots are
-        /// empty). Only non-null prefabs override what is already assigned.
-        /// </summary>
         public void ConfigurePrefabs(LevelPrefabs prefabs) => m_prefabs.OverrideWith(prefabs);
 
-        /// <summary>Supply / override the colour→material map before <see cref="Build"/> runs.</summary>
         public void ConfigureMaterials(ColorMaterialSet materials) => m_colorMaterials.OverrideWith(materials);
 
         public void Build(LevelData level, InputManager input, Timer timer)
@@ -82,7 +71,8 @@ namespace PeopleFlow
             GameLog.Log(LogType.Log, $"Level {level.levelNumber} built: {level.TotalHoles} holes from " +
                        $"{singleHoleFactories + bundleFactories} factories " +
                        $"({singleHoleFactories} single-hole + {bundleFactories} bundle), " +
-                       $"{Lanes.Count} lanes, capacity {level.runwayCapacity}.");
+                       $"{Lanes.Count} lanes, capacity {Track.Capacity}" +
+                       $"{(level.autoRunwayCapacity ? " (auto)" : " (manual)")}.");
         }
 
         public void Clear()
@@ -102,65 +92,57 @@ namespace PeopleFlow
 
         // ---- runway visual & math logic -------------------------------------
 
-        /// <summary>
-        /// Handles the dependency between math and visuals.
-        /// If manual LineRenderer -> Spawn visual first, Track copies it.
-        /// If Tile/Math -> Track builds math first, Visual copies or tiles along it.
-        /// </summary>
         void BuildRunwayTrackAndVisual(LevelData level)
         {
-            LineRenderer visualTrack = null;
             bool useTiles = level.roadVisual == RoadVisual.RoadTiles && m_prefabs.road != null;
 
-            // STEP 1: If using a LineRenderer, spawn it FIRST so RunwayTrack can read from it
-            if (!useTiles && level.trackLinePrefab != null)
-            {
-                var trackObj = Instantiate(level.trackLinePrefab, m_roadRoots);
-                trackObj.name = "TrackLine_Visual";
-                trackObj.transform.localPosition = Vector3.zero;
-                trackObj.transform.localRotation = Quaternion.identity;
+            // STEP 1: Instantiate the authored spline path (if the level ships one) so the Track can
+            // sample it. Null when the level has no path prefab — the Track then uses its own serialized
+            // spline, or the math shape.
+            SplineContainer spline = InstantiateTrackSpline(level);
 
-                visualTrack = trackObj.GetComponent<LineRenderer>();
-                if (visualTrack == null)
-                    PFLog.Warn($"LevelManager: Prefab '{level.trackLinePrefab.name}' has no LineRenderer!");
-            }
-
-            // STEP 2: Build the math. 
-            // It will intelligently use visualTrack if it has hand-drawn points, OR fallback to math.
+            // STEP 2: Build the path math — samples the spline if present, else the math shape.
             if (Track != null)
-            {
-                Track.Build(level, visualTrack);
-            }
+                Track.Build(level, spline);
+            //if (useTiles)
+            //    BuildRoad(m_prefabs.road, m_roadRoots); // tiles need Track.Evaluate → after Track.Build
+            //else
+            //    BuildLineVisual();                      // a looped line through the path points
+        }
 
-            // STEP 3: Complete visuals that require the math track to be fully built
-            if (useTiles)
-            {
-                // Tiles need Track.Evaluate, so they must be built AFTER Track.Build
-                BuildRoad(m_prefabs.road, m_roadRoots);
-            }
-            else if (visualTrack != null)
-            {
-                // If the visualTrack had no points (designer left it blank), Track built the math automatically.
-                // We must now force the empty visual LineRenderer to copy the generated math so it's visible.
-                if (visualTrack.positionCount < 2)
-                {
-                    var pts = Track.PathPoints;
-                    int n = pts != null ? pts.Count : 0;
+        SplineContainer InstantiateTrackSpline(LevelData level)
+        {
+            if (level.trackLinePrefab == null) return null;
 
-                    if (n >= 2)
-                    {
-                        visualTrack.useWorldSpace = true;
-                        visualTrack.loop = true;
-                        visualTrack.positionCount = n;
+            var go = Instantiate(level.trackLinePrefab, m_roadRoots);
+            //go.name = "TrackSpline";
+            //go.transform.localPosition = Vector3.zero;
+            //go.transform.localRotation = Quaternion.identity;
 
-                        for (int i = 0; i < n; i++)
-                        {
-                            // Apply a tiny Y offset to prevent Z-fighting with the ground plane
-                            visualTrack.SetPosition(i, pts[i] + (Vector3.up * 0.02f));
-                        }
-                    }
-                }
-            }
+            var container = go.GetComponent<SplineContainer>();
+            if (container == null)
+                Debug.LogWarning($"LevelManager: Prefab '{level.trackLinePrefab.name}' has no SplineContainer — " +
+                           "the runway will fall back to its math shape (oval / rectangle / custom).");
+            return container;
+        }
+
+        void BuildLineVisual()
+        {
+            if (Track == null) return;
+            var pts = Track.PathPoints;
+            int n = pts != null ? pts.Count : 0;
+            if (n < 2) return;
+
+            var go = new GameObject("TrackLine_Visual");
+            go.transform.SetParent(m_roadRoots, false);
+
+            var lr = go.AddComponent<LineRenderer>();
+            lr.useWorldSpace = true;
+            lr.loop = true;
+            lr.widthMultiplier = 0.15f;
+            lr.positionCount = n;
+            for (int i = 0; i < n; i++)
+                lr.SetPosition(i, pts[i] + Vector3.up * 0.02f); // tiny lift to avoid Z-fighting the ground
         }
 
         void BuildRoad(GameObject prefab, Transform parent)
@@ -206,7 +188,7 @@ namespace PeopleFlow
 
             if (!m_prefabs.HasFactory)
             {
-                PFLog.Error("LevelManager: holes only spawn at factories, but no factory prefab is " +
+                Debug.LogError("LevelManager: holes only spawn at factories, but no factory prefab is " +
                             "assigned — assign one (e.g. Prefabs/Ingame/Factory). Skipping all holes.");
                 return;
             }
@@ -229,7 +211,7 @@ namespace PeopleFlow
         void SpawnFactory(HoleFactorySetup setup, int index, MaterialLibrary mats)
         {
             var prefab = m_prefabs.FactoryFor(index);
-            if (prefab == null) { PFLog.Error($"No factory prefab for index {index} — skipping."); return; }
+            if (prefab == null) { Debug.LogError($"No factory prefab for index {index} — skipping."); return; }
 
             bool pinned = setup.placement != null && setup.placement.overrideTransform;
             Vector3 factoryPos;
@@ -279,7 +261,7 @@ namespace PeopleFlow
             {
                 var setup = level.lanes[i];
                 var prefab = m_prefabs.LaneFor(i);
-                if (prefab == null) { PFLog.Error($"No lane prefab for index {i} — skipping."); continue; }
+                if (prefab == null) { Debug.LogError($"No lane prefab for index {i} — skipping."); continue; }
 
                 bool pinned = setup.placement != null && setup.placement.overrideTransform;
                 Vector3 padPos = pinned
@@ -294,7 +276,7 @@ namespace PeopleFlow
                 var lane = go.GetComponent<Lane>();
                 if (lane == null)
                 {
-                    PFLog.Error($"Lane prefab '{prefab.name}' has no Lane component — skipping.");
+                    Debug.LogError($"Lane prefab '{prefab.name}' has no Lane component — skipping.");
                     Destroy(go);
                     continue;
                 }

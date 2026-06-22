@@ -3,10 +3,6 @@ using UnityEngine;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// Maps <see cref="PeopleColor"/> to bright, high-contrast pastel RGB values used by every
-    /// material in the game. Centralising this means re-skinning the whole game is one edit.
-    /// </summary>
     public static class ColorPalette
     {
         static readonly Dictionary<PeopleColor, Color> s_colors = new Dictionary<PeopleColor, Color>
@@ -19,10 +15,8 @@ namespace PeopleFlow
             { PeopleColor.Orange, new Color(0.99f, 0.60f, 0.30f) },
         };
 
-        /// <summary>Grey "?" tint used while a hidden colour is concealed.</summary>
         public static readonly Color Hidden = new Color(0.55f, 0.55f, 0.58f);
 
-        /// <summary>Neutral material colour for the runway / lane pads.</summary>
         public static readonly Color Neutral = new Color(0.86f, 0.88f, 0.92f);
 
         public static Color ToColor(this PeopleColor c)

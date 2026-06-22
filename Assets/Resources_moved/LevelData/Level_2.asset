@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: dfe685c2fd8206a4a9e8afbaa689e52f, type: 3}
-  m_Name: Level_1
+  m_Name: Level_2
   m_EditorClassIdentifier: Assembly-CSharp::PeopleFlow.LevelData
   levelNumber: 1
   timeLimit: 60
@@ -75,6 +75,17 @@ MonoBehaviour:
         position: {x: 0, y: 0, z: 0}
         rotationEuler: {x: 0, y: 0, z: 0}
         scale: {x: 0, y: 0, z: 0}
+    - color: 3
+      requiredCount: 12
+      trackPosition: 0
+      hidden: 0
+      mechanic: 0
+      unlockAfterHolesCompleted: 0
+      placement:
+        overrideTransform: 0
+        position: {x: 0, y: 0, z: 0}
+        rotationEuler: {x: 0, y: 0, z: 0}
+        scale: {x: 0, y: 0, z: 0}
     placement:
       overrideTransform: 1
       position: {x: -3, y: 0, z: 9.55}
@@ -83,6 +94,17 @@ MonoBehaviour:
   - trackPosition: 0.5
     bundle:
     - color: 1
+      requiredCount: 12
+      trackPosition: 0
+      hidden: 0
+      mechanic: 0
+      unlockAfterHolesCompleted: 0
+      placement:
+        overrideTransform: 0
+        position: {x: 0, y: 0, z: 0}
+        rotationEuler: {x: 0, y: 0, z: 0}
+        scale: {x: 0, y: 0, z: 0}
+    - color: 2
       requiredCount: 12
       trackPosition: 0
       hidden: 0

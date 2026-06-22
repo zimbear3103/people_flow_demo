@@ -1,15 +1,9 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// A waiting queue of coloured characters at the bottom of the screen. The queued characters
-    /// stand on the lane in single-colour groups — each group a horizontal row, groups stepping back
-    /// from the tray. While the player holds on this lane, the front group hops onto the runway every
-    /// <c>releaseInterval</c> seconds (subject to runway capacity, spacing and an optional barrier)
-    /// and the remaining groups slide forward. Group size is editor-configurable.
-    /// </summary>
     public class Lane : MonoBehaviour
     {
         const float MinEntrySpacing = 0.95f; // don't release if a runner is still this close to entry
@@ -20,13 +14,14 @@ namespace PeopleFlow
         [Tooltip("Max minions in one group. Groups are single-colour: a tap/hold releases one colour " +
                  "block at a time (or this many of it, whichever is smaller).")]
         [Min(1)]
-        [SerializeField] int m_groupSize = 3;
+        [SerializeField] int m_groupSize = 4;
         [Tooltip("Horizontal gap (world units) between minions standing side-by-side within a group.")]
         [SerializeField] float m_memberSpacing = 0.5f;
         [Tooltip("Depth gap (world units) between consecutive groups in the waiting line.")]
         [SerializeField] float m_groupSpacing = 0.9f;
-        [Tooltip("Seconds between consecutive members of a released group hopping onto the road, so a " +
-                 "group enters as an ordered wave instead of all members leaping at once. 0 = simultaneous.")]
+        [Tooltip("Min seconds between consecutive members of a group dropping into a HOLE (peel stagger), " +
+                 "so a matching rank enters the hole one-by-one. Note: members hop ONTO the road strictly " +
+                 "sequentially (each waits for the one ahead to land), so this no longer paces road entry.")]
         [SerializeField] float m_memberLaunchStagger = 0.08f;
         [Tooltip("Reverse the per-member hop order from left-to-right to right-to-left.")]
         [SerializeField] bool m_releaseRightToLeft = false;
@@ -47,13 +42,13 @@ namespace PeopleFlow
 
         float m_timer;
         bool m_wasHeld;
+        RunnerGroup m_lastGroup;   // the most recent group this lane launched; gates next-group spacing
 
         bool m_barrier;
         int m_unlockAfter;
         int m_observedCompleted;
         GameObject m_barrierVisual;
 
-        /// <summary>Set by <see cref="InputManager"/> every frame: is the player holding this lane?</summary>
         public bool IsHeld { get; set; }
 
         public bool Barriered => m_barrier && m_observedCompleted < m_unlockAfter;
@@ -62,10 +57,6 @@ namespace PeopleFlow
 
         // ---- setup ----------------------------------------------------------
 
-        /// <summary><paramref name="supply"/> is the ordered waiting queue (front = index 0) the
-        /// builder hands this lane. It is resolved from the level by <see cref="SupplyDealer"/>: an
-        /// authored lane gets its own <see cref="LaneSetup.characters"/> back; a lane the designer
-        /// left empty is filled from the holes' demand. May be null/empty (an empty pad).</summary>
         public void Setup(LaneSetup setup, List<PeopleColor> supply, RunwayTrack track, MaterialLibrary mats,
             Transform runnersRoot, GameObject characterPrefab, float runSpeed, Vector3 padPosition)
         {
@@ -124,9 +115,6 @@ namespace PeopleFlow
             ReflowPreviews(snap: true);
         }
 
-        /// <summary>Reorder colours so identical colours are contiguous, preserving the order in which
-        /// each colour first appears. Turns an interleaved queue (R,G,B,R,G,B) into colour blocks
-        /// (R,R,G,G,B,B) so groups end up single-coloured.</summary>
         static List<PeopleColor> ClusterByColor(List<PeopleColor> colors)
         {
             var order = new List<PeopleColor>();       // colours by first appearance
@@ -143,9 +131,6 @@ namespace PeopleFlow
             return result;
         }
 
-        /// <summary>World position for the <paramref name="member"/>-th minion of the
-        /// <paramref name="group"/>-th waiting group, a horizontal row of <paramref name="groupCount"/>
-        /// centred on the lane; groups step back from the tray.</summary>
         Vector3 SlotPos(int group, int member, int groupCount)
         {
             float centered = member - (groupCount - 1) * 0.5f; // centre the row on the lane
@@ -155,8 +140,6 @@ namespace PeopleFlow
             return p + m_backDir * (group * m_groupSpacing) + m_rightDir * (centered * m_memberSpacing);
         }
 
-        /// <summary>Number of minions in the front (next-to-release) group: the leading run of one
-        /// colour, capped at <see cref="GroupSize"/>. 0 if the queue is empty.</summary>
         int FrontGroupCount()
         {
             m_previews.RemoveAll(p => p == null);
@@ -172,9 +155,6 @@ namespace PeopleFlow
             return Quaternion.LookRotation(Vector3.forward);
         }
 
-        /// <summary>Lay the waiting line out as single-colour groups: a new group starts on each colour
-        /// change or once a group reaches <see cref="GroupSize"/>. Sets each preview's slide target
-        /// (and snaps its position too on first spawn).</summary>
         void ReflowPreviews(bool snap = false)
         {
             m_previews.RemoveAll(p => p == null);
@@ -214,12 +194,21 @@ namespace PeopleFlow
             m_wasHeld = IsHeld;
 
             if (!IsHeld) return;
+
+            // NOTE: the runway-full lose decision lives SOLELY in RunwayTrack (its per-frame check fires
+            // on a genuine over-capacity overflow, or on a true deadlock: full + nobody can drain). The
+            // lane no longer instant-loses just because the bar reads full while held — a momentarily
+            // full runway that can still drain is not a loss (and a group still ASSEMBLING at the start
+            // counts toward capacity for ~1s before it can move, so a lane-side full check would punish
+            // a group that was about to set off and drain). Over-feeding is still punished: releasing
+            // another group while already full overflows capacity, which RunwayTrack catches.
+
             m_timer -= Time.deltaTime;
             if (m_timer > 0f) return;
 
             if (CanRelease())
             {
-                ReleaseGroup();
+                StartCoroutine(ReleaseGroup());
                 m_timer = m_releaseInterval;
             }
         }
@@ -229,33 +218,52 @@ namespace PeopleFlow
             if (m_previews.Count == 0 || Barriered) return false;
 
             // Release the whole front (single-colour) group. We deliberately do NOT gate on runway
-            // capacity any more: while held, the player keeps feeding the runway, and overflowing it
-            // past capacity loses the level (see RunwayTrack's over-capacity check) instead of the
-            // release silently stalling.
+            // capacity: while held, the player keeps feeding the runway, and overflowing it past
+            // capacity loses the level (see RunwayTrack's over-capacity check) instead of stalling.
             int groupCount = FrontGroupCount();
             if (groupCount <= 0) return false;
 
-            // Still gate on entry spacing so members enter single-file — the queue waits at the line
-            // until the entry clears, instead of stacking on top of the previous group.
-            float gap = GroupEntryGap();
-            for (int k = 0; k < groupCount; k++)
+            // QUEUE-ONLY pacing (no spacing between groups): the single gate is that the previous group
+            // has fully ASSEMBLED at the start — every member boarded. At that point the group sets off
+            // (its head starts advancing) and frees the start area, so the next group can launch in. The
+            // groups then follow nose-to-tail in queue order, paced purely by how long each takes to
+            // gather, with no artificial rank gap or entry-spacing check.
+            if (m_lastGroup != null && !m_lastGroup.AllEntered) return false;
+
+            if (m_track != null)
             {
-                Vector3 landing = m_track.Evaluate(RunwayTrack.EntryT + k * gap);
-                if (m_track.HasRunnerNear(landing, MinEntrySpacing)) return false;
+                // Tránh launch nhiều lane cùng 1 lúc: 
+                // Nếu đang có bất kỳ group nào (từ bất kỳ lane nào) đang thả quân (IsAssembling), thì phải chờ.
+                if (m_track.IsAnyGroupAssembling()) return false;
+
+                // Tránh kẹt điểm launch: 
+                // Chỉ cần đảm bảo đuôi group vừa đi qua đã rời xa Entry đủ (1 body-length)
+                float safeDistT = MinEntrySpacing / Mathf.Max(0.1f, m_track.TotalLength);
+                if (m_track.IsEntryBlocked(RunwayTrack.EntryT, safeDistT)) return false;
             }
+
             return true;
         }
 
-        void ReleaseGroup()
+        private IEnumerator ReleaseGroup()
         {
             m_previews.RemoveAll(p => p == null); // drop any destroyed entries defensively
-            if (m_previews.Count == 0) return;
+            if (m_previews.Count == 0) yield return null;
 
             int count = FrontGroupCount();
-            if (count <= 0) return;
-            // Stagger the group's landing points one body-length apart along the loop so the members
-            // enter single-file from the bottom-centre entry instead of stacking on one spot.
-            float gap = GroupEntryGap();
+            if (count <= 0) yield return null;
+            if (m_track == null || m_track.TotalLength <= 0.01f) yield return null; // need a built track to form up on
+
+            // Release the front group as ONE horizontal crowd block that mirrors its waiting row: every
+            // member rides a single shared formation, side-by-side across the road in `count` columns
+            // (a single rank, row 0). So a group of 4 in the lane runs the loop 4-abreast instead of
+            // single file. The track owns/ticks the block; members still register individually so
+            // runway capacity and jam detection see each of them.
+            PeopleColor color = m_previews[0].Color;
+            var group = m_track.CreateGroup(color, m_runSpeed, count, m_memberSpacing,
+                GroupEntryGap(), m_memberLaunchStagger, RunwayTrack.EntryT);
+            m_lastGroup = group; // gates the next release's spacing (see CanRelease)
+
             for (int k = 0; k < count; k++)
             {
                 var member = m_previews[0];
@@ -264,14 +272,18 @@ namespace PeopleFlow
                 // tied to) the lane once it's running the loop.
                 if (m_runnersRoot != null) member.transform.SetParent(m_runnersRoot, true);
 
+                int col = k;                       // one rank: column = position in the lane row
+                group.AddMember(member, 0, col);
+                // Hop on strictly one-at-a-time (left-to-right / right-to-left): each member waits for the
+                // one ahead of it to LAND before it leaps, instead of all leaping on a fixed timer.
                 int order = m_releaseRightToLeft ? (count - 1 - k) : k;
-                member.LaunchToRoad(m_track, RunwayTrack.EntryT + k * gap, m_runSpeed, order * m_memberLaunchStagger);
+                member.LaunchIntoGroup(m_track, group, 0, col, order);
             }
 
+            yield return new WaitUntil(() => group.AllEntered);
             ReflowPreviews();
         }
 
-        /// <summary>Normalised loop distance between consecutive group members (one body-length).</summary>
         float GroupEntryGap() => m_track.TotalLength > 0.01f ? MinEntrySpacing / m_track.TotalLength : 0.02f;
 
         // ---- barrier --------------------------------------------------------
@@ -300,8 +312,6 @@ namespace PeopleFlow
             RefreshBarrierVisual(); // hide it unless this lane is actually barriered
         }
 
-        /// <summary>World Y the waiting minions stand at: the top of the "Tray" child if present,
-        /// else the top of the lane's renderers, plus the designer-tunable offset.</summary>
         float ComputeStandY()
         {
             var tray = Prim.FindDescendant(transform, "Tray");
@@ -315,11 +325,6 @@ namespace PeopleFlow
             return b.max.y + m_previewStandOffset;
         }
 
-        /// <summary>
-        /// InputManager raycasts the pointer at lanes, so the prefab needs a collider. If the art
-        /// prefab doesn't ship one, add a box sized to its renderers (falling back to a sensible
-        /// footprint) so taps still register.
-        /// </summary>
         void EnsureCollider()
         {
             if (GetComponentInChildren<Collider>(true) != null) return;

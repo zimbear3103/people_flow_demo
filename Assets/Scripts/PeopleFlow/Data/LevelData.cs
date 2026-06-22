@@ -3,13 +3,6 @@ using UnityEngine;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// A stored transform (world position, Euler rotation, local scale) for one built object.
-    /// When <see cref="overrideTransform"/> is ON the level is built by placing the object exactly
-    /// here; when OFF the build computes a default placement (holes / factories from their
-    /// <c>trackPosition</c>, lanes from automatic spacing). This is how a level's geometry is fully
-    /// data-driven: author the spec to pin an object, or leave it off to keep the procedural layout.
-    /// </summary>
     [System.Serializable]
     public class TransformSpec
     {
@@ -23,12 +16,8 @@ namespace PeopleFlow
 
         public Quaternion Rotation => Quaternion.Euler(rotationEuler);
 
-        /// <summary>Local scale to apply, falling back to one if left at zero (a freshly-serialized
-        /// spec) so an enabled-but-unscaled object is never invisible.</summary>
         public Vector3 SafeScale => scale == Vector3.zero ? Vector3.one : scale;
 
-        /// <summary>Apply this spec to <paramref name="t"/> as a WORLD position/rotation plus local
-        /// scale. Used when <see cref="overrideTransform"/> is set.</summary>
         public void ApplyWorld(Transform t)
         {
             t.SetPositionAndRotation(position, Rotation);
@@ -36,7 +25,6 @@ namespace PeopleFlow
         }
     }
 
-    /// <summary>One waiting lane: an ordered list of colours. Index 0 = front of the queue.</summary>
     [System.Serializable]
     public class LaneSetup
     {
@@ -46,7 +34,7 @@ namespace PeopleFlow
         [Min(1)]
         [Tooltip("Max minions per released group. The waiting line forms single-colour groups of at " +
                  "most this many; a tap/hold releases one such group.")]
-        public int groupSize = 3;
+        public int groupSize = 4;
         [SerializeField] float m_releaseInterval = 0.22f;
         [SerializeField] float m_memberSpacing = 0.2f;
         [SerializeField] float m_groupSpacing = 0.9f;
@@ -65,7 +53,6 @@ namespace PeopleFlow
 
     }
 
-    /// <summary>One hole placed around the loop at a normalised track position.</summary>
     [System.Serializable]
     public class HoleSetup
     {
@@ -92,14 +79,6 @@ namespace PeopleFlow
         public TransformSpec placement = new TransformSpec();
     }
 
-    /// <summary>
-    /// A hole factory: a single track position that produces a <em>bundle</em> of holes one at a
-    /// time. The first hole in the bundle is shown; when it completes it disappears and the next
-    /// hole in the bundle is spawned in its place, until the bundle is exhausted. Each bundle entry
-    /// reuses <see cref="HoleSetup"/> for its colour / count / specials — its own
-    /// <see cref="HoleSetup.trackPosition"/> is ignored; the factory's <see cref="trackPosition"/>
-    /// is used for every hole it produces.
-    /// </summary>
     [System.Serializable]
     public class HoleFactorySetup
     {
@@ -119,11 +98,9 @@ namespace PeopleFlow
                  "hole it produces rides the factory's conveyor and is detected at the nearest track point.")]
         public TransformSpec placement = new TransformSpec();
 
-        /// <summary>Number of holes this factory will produce over its lifetime.</summary>
         public int Count => bundle != null ? bundle.Count : 0;
     }
 
-    /// <summary>An arrow / speed zone on the runway that pushes runners faster through a range.</summary>
     [System.Serializable]
     public class ArrowSetup
     {
@@ -132,10 +109,6 @@ namespace PeopleFlow
         [Min(1f)] public float speedMultiplier = 2.5f;
     }
 
-    /// <summary>
-    /// Designer-authored level definition. Create via Assets ▸ Create ▸ PeopleFlow ▸ Level,
-    /// or generate the bundled samples via the menu PeopleFlow ▸ Generate Sample Levels.
-    /// </summary>
     [CreateAssetMenu(fileName = "Level_", menuName = "PeopleFlow/Level")]
     public class LevelData : ScriptableObject
     {
@@ -144,7 +117,14 @@ namespace PeopleFlow
 
         [Header("Rules")]
         public float timeLimit = 60f;
-        [Min(1)] public int runwayCapacity = 12;
+        [Tooltip("When true, the runway's capacity is CALCULATED from the loop length at build time " +
+                 "(how many minions physically fit around it) — see RunwayTrack. When false, the manual " +
+                 "runwayCapacity below is used instead.")]
+        public bool autoRunwayCapacity = true;
+        [Min(1)]
+        [Tooltip("Manual runway capacity, used only when autoRunwayCapacity is OFF. Overfilling the " +
+                 "runway past its capacity fails the level.")]
+        public int runwayCapacity = 12;
         public float runSpeed = 3.5f;
 
         [Header("Loop shape (world units)")]
@@ -163,14 +143,17 @@ namespace PeopleFlow
         public List<Vector3> customWaypoints = new List<Vector3>();
 
         [Header("Loop visual")]
-        [Tooltip("How the runway is drawn — tiled Road prefab, or a LineRenderer through the path. " +
-                 "Both follow the same path, so they match the chosen shape.")]
+        [Tooltip("How the runway is drawn — tiled Road prefab, or a simple line through the path. " +
+                 "Both follow the same path, so they match the chosen shape / authored spline.")]
         public RoadVisual roadVisual = RoadVisual.RoadTiles;
 
         [Tooltip("Where the runway loop sits. Override it to move / rotate / scale the whole loop " +
                  "(its centre, orientation and size); leave it off to centre the loop on the origin. " +
                  "The shape above is generated relative to this transform.")]
         public TransformSpec trackPlacement = new TransformSpec();
+        [Tooltip("Optional authored runway path: a prefab carrying a Unity SplineContainer. When set, the " +
+                 "runway loop is sampled from that spline instead of the math shape above. Leave empty to " +
+                 "use the TrackShape (oval / rectangle / custom waypoints).")]
         public GameObject trackLinePrefab;
         [Header("Content")]
         public List<LaneSetup> lanes = new List<LaneSetup>();
@@ -181,8 +164,6 @@ namespace PeopleFlow
         public List<HoleFactorySetup> holeFactories = new List<HoleFactorySetup>();
         public List<ArrowSetup> arrows = new List<ArrowSetup>();
 
-        /// <summary>Every hole that must be completed to win: standalone holes plus every hole across
-        /// all factory bundles. Drives the win condition and the HUD progress count.</summary>
         public int TotalHoles
         {
             get

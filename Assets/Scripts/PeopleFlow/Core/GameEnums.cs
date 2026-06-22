@@ -1,7 +1,5 @@
 namespace PeopleFlow
 {
-    /// <summary>Legacy high-level game flow states. The referee is now <see cref="GamePlayController"/>;
-    /// gameplay gates on <c>GamePlayController.IsGamePlaying</c> and this enum is no longer read.</summary>
     public enum GameState
     {
         Boot,
@@ -11,7 +9,6 @@ namespace PeopleFlow
         Lose
     }
 
-    /// <summary>Why a level was lost (shown on the lose popup).</summary>
     public enum LoseReason
     {
         None,
@@ -19,10 +16,6 @@ namespace PeopleFlow
         TimeOut     // ran out of time before all holes were filled
     }
 
-    /// <summary>
-    /// The set of character / hole colours. Keep the ordering in sync with
-    /// <see cref="ColorPalette"/>. Add more colours here and in the palette to extend the game.
-    /// </summary>
     public enum PeopleColor
     {
         Red,
@@ -33,7 +26,6 @@ namespace PeopleFlow
         Orange
     }
 
-    /// <summary>Special behaviour applied to a hole (section 7 mechanics).</summary>
     public enum HoleMechanic
     {
         None,
@@ -41,8 +33,6 @@ namespace PeopleFlow
         Gate    // visible but barred until "unlockAfterHolesCompleted" other holes are complete
     }
 
-    /// <summary>The geometry of the closed runway loop. All shapes share the generic arc-length
-    /// path engine in <see cref="RunwayTrack"/>; they differ only in the corner points generated.</summary>
     public enum TrackShape
     {
         Oval,       // smooth ellipse from loopWidth × loopHeight
@@ -51,11 +41,9 @@ namespace PeopleFlow
         Custom      // designer-supplied corner points (LevelData.customWaypoints), the manual-setup path
     }
 
-    /// <summary>How the runway is drawn. Both visuals follow the same <see cref="RunwayTrack"/> path,
-    /// so they match whatever <see cref="TrackShape"/> is in use.</summary>
     public enum RoadVisual
     {
         RoadTiles,  // tile the Road prefab around the loop (falls back to a line if no prefab is set)
-        Line        // draw the path as a LineRenderer through the loop's corner points
+        Line        // draw the path as a simple line through the loop's path points
     }
 }

@@ -6,11 +6,6 @@ using UnityEngine.InputSystem;
 
 namespace PeopleFlow
 {
-    /// <summary>
-    /// Detects tap &amp; hold per lane. Uses the new Input System's unified Pointer (mouse on PC,
-    /// touch on mobile) when available, with a legacy Input fallback. Raycasts the pointer into
-    /// the 3D scene and marks the hit lane as held — no custom layers/tags required.
-    /// </summary>
     public class InputManager : Singleton<InputManager>
     {
         List<Lane> m_lanes = new List<Lane>();
@@ -55,9 +50,6 @@ namespace PeopleFlow
                 if (m_lanes[i] != null) m_lanes[i].IsHeld = m_lanes[i] == hitLane;
         }
 
-        /// <summary>Project <paramref name="ray"/> onto each lane's horizontal plane and return the
-        /// lane whose pad the tap lands closest to (within a small radius), or null if the tap isn't
-        /// over any lane. Lets a tap on the elevated waiting minions still select their lane.</summary>
         Lane PickLaneUnderRay(Ray ray)
         {
             Lane best = null;
